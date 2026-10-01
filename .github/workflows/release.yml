@@ -1,0 +1,121 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Validate repository
+        run: |
+          set -euo pipefail
+          go test -count=1 ./...
+          go vet ./...
+          go test ./tests/architecture
+
+      - name: Validate tag and prepare build metadata
+        id: metadata
+        run: |
+          set -euo pipefail
+          version_output="$(go run ./cmd/nodex version)"
+          first_line="${version_output%%$'\n'*}"
+          version="${first_line#nodex }"
+          if [[ "v${version}" != "$GITHUB_REF_NAME" ]]; then
+            printf 'Tag %s does not match source version %s\n' "$GITHUB_REF_NAME" "$version" >&2
+            exit 1
+          fi
+          build_date="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          printf 'version=%s\nbuild_date=%s\n' "$version" "$build_date" >> "$GITHUB_OUTPUT"
+
+      - name: Build and package release binaries
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+          BUILD_DATE: ${{ steps.metadata.outputs.build_date }}
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          dist="$RUNNER_TEMP/nodex-release"
+          mkdir -p "$dist"
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            goos="${target%/*}"
+            goarch="${target#*/}"
+            binary=nodex
+            if [[ "$goos" == windows ]]; then
+              binary=nodex.exe
+            fi
+            build_dir="$RUNNER_TEMP/nodex-build/${goos}_${goarch}"
+            mkdir -p "$build_dir"
+            GOOS="$goos" GOARCH="$goarch" go build \
+              -ldflags "-X main.commit=${GITHUB_SHA} -X main.buildDate=${BUILD_DATE}" \
+              -o "$build_dir/$binary" ./cmd/nodex
+            archive="$dist/nodex_${VERSION}_${goos}_${goarch}"
+            if [[ "$goos" == windows ]]; then
+              (cd "$build_dir" && zip "$archive.zip" "$binary")
+            else
+              tar -czf "$archive.tar.gz" -C "$build_dir" "$binary"
+            fi
+          done
+
+      - name: Verify binary and generate checksums
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+          BUILD_DATE: ${{ steps.metadata.outputs.build_date }}
+        run: |
+          set -euo pipefail
+          actual="$("$RUNNER_TEMP/nodex-build/linux_amd64/nodex" version)"
+          expected="$(printf 'nodex %s\ncommit %s\nbuilt %s\n' "$VERSION" "$GITHUB_SHA" "$BUILD_DATE")"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'Release binary version mismatch:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          printf '%s\n' "$actual"
+          cd "$RUNNER_TEMP/nodex-release"
+          export LC_ALL=C
+          printf '%s\n' *.tar.gz *.zip | sort | xargs sha256sum > SHA256SUMS
+          sha256sum --check SHA256SUMS
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            printf 'Release %s already exists\n' "$GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          release_flags=()
+          version_without_build="${VERSION%%+*}"
+          if [[ "$version_without_build" == *-* ]]; then
+            release_flags+=(--prerelease)
+          fi
+          dist="$RUNNER_TEMP/nodex-release"
+          artifacts=(
+            "$dist/nodex_${VERSION}_linux_amd64.tar.gz"
+            "$dist/nodex_${VERSION}_linux_arm64.tar.gz"
+            "$dist/nodex_${VERSION}_darwin_amd64.tar.gz"
+            "$dist/nodex_${VERSION}_darwin_arm64.tar.gz"
+            "$dist/nodex_${VERSION}_windows_amd64.zip"
+            "$dist/nodex_${VERSION}_windows_arm64.zip"
+            "$dist/SHA256SUMS"
+          )
+          gh release create "$GITHUB_REF_NAME" "${artifacts[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag --title "$GITHUB_REF_NAME" --generate-notes \
+            "${release_flags[@]}"
