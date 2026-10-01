@@ -4,7 +4,7 @@ package main
 //
 // It is defined in this source file. Changing it requires editing this
 // declaration. The running binary has no link-time override for it.
-const version = "0.1.0-beta.1"
+const version = "0.1.0-beta.2"
 
 // commit and buildDate are build metadata.
 //

@@ -24,7 +24,7 @@ const _ = version
 
 // defaultVersionOutput is the stdout of a normal build, including its
 // single terminating newline.
-const defaultVersionOutput = "nodex 0.1.0-beta.1\ncommit unknown\nbuilt unknown\n"
+var defaultVersionOutput = "nodex " + version + "\ncommit unknown\nbuilt unknown\n"
 
 func TestMain(m *testing.M) {
 	userHomeDir = func() (string, error) {
@@ -1523,8 +1523,11 @@ func snippetLineCount(text string) int {
 
 func TestVersion(t *testing.T) {
 	root := t.TempDir()
-	if version != "0.1.0-beta.1" || commit != "unknown" || buildDate != "unknown" {
-		t.Fatalf("defaults = %q %q %q", version, commit, buildDate)
+	if got, want := version, "0.1.0-beta.2"; got != want {
+		t.Fatalf("version = %q, want %q", got, want)
+	}
+	if commit != "unknown" || buildDate != "unknown" {
+		t.Fatalf("defaults = %q %q", commit, buildDate)
 	}
 	if got := runOK(t, root, "version"); got != defaultVersionOutput {
 		t.Fatalf("stdout = %q", got)
@@ -1593,15 +1596,12 @@ func TestVersion(t *testing.T) {
 	cases := []struct {
 		commit, buildDate, want string
 	}{
-		{"0123456789abcdef", "unknown", "nodex 0.1.0-beta.1\ncommit 0123456789abcdef\nbuilt unknown\n"},
-		{"unknown", "2026-10-01T08:00:00Z", "nodex 0.1.0-beta.1\ncommit unknown\nbuilt 2026-10-01T08:00:00Z\n"},
-		{"0123456789abcdef", "2026-10-01T08:00:00Z", "nodex 0.1.0-beta.1\ncommit 0123456789abcdef\nbuilt 2026-10-01T08:00:00Z\n"},
+		{"0123456789abcdef", "unknown", "nodex " + version + "\ncommit 0123456789abcdef\nbuilt unknown\n"},
+		{"unknown", "2026-10-01T08:00:00Z", "nodex " + version + "\ncommit unknown\nbuilt 2026-10-01T08:00:00Z\n"},
+		{"0123456789abcdef", "2026-10-01T08:00:00Z", "nodex " + version + "\ncommit 0123456789abcdef\nbuilt 2026-10-01T08:00:00Z\n"},
 	}
 	for _, tc := range cases {
 		commit, buildDate = tc.commit, tc.buildDate
-		if version != "0.1.0-beta.1" {
-			t.Fatalf("version changed to %q", version)
-		}
 		if versionText() != tc.want {
 			t.Fatalf("helper %q %q = %q", tc.commit, tc.buildDate, versionText())
 		}
@@ -1610,8 +1610,8 @@ func TestVersion(t *testing.T) {
 		}
 	}
 	commit, buildDate = savedCommit, savedDate
-	if version != "0.1.0-beta.1" || commit != "unknown" || buildDate != "unknown" {
-		t.Fatalf("restored values = %q %q %q", version, commit, buildDate)
+	if commit != "unknown" || buildDate != "unknown" {
+		t.Fatalf("restored values = %q %q", commit, buildDate)
 	}
 	if versionText() != defaultVersionOutput {
 		t.Fatalf("restored helper = %q", versionText())
