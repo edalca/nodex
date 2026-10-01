@@ -1,4 +1,6 @@
 // Package golang parses Go source for the syntax root.
+// New supplies one complete language capability, including recognition,
+// parsing, structural context, and the Go preset catalog and semantics.
 //
 // Parse uses the standard library parser and returns one comment for every
 // comment group, in physical lexical order. A group is a run of comments
@@ -44,6 +46,7 @@
 package golang
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -51,43 +54,79 @@ import (
 	"go/token"
 	"sort"
 	"strings"
+
+	"github.com/edalca/nodex/internal/syntax/contracts"
+	"github.com/edalca/nodex/internal/syntax/types"
 )
+
+type language struct{}
+
+var _ contracts.Language = language{}
+
+// New returns the complete, immutable Go syntax implementation.
+func New() contracts.Language { return language{} }
+
+// ID returns the stable Go language identifier.
+func (language) ID() string { return "go" }
+
+// Recognize reports whether the logical path ends in the case-sensitive .go suffix.
+func (language) Recognize(logicalPath string) bool { return isGoPath(logicalPath) }
+
+// Parse returns comments and declarations from one Go parse as neutral facts.
+func (language) Parse(source []byte) (*contracts.Document, error) {
+	comments, declarations, err := ParseFile(source)
+	if err != nil {
+		return nil, languageFailure(err)
+	}
+	return &contracts.Document{Comments: comments, Declarations: declarations}, nil
+}
+
+// Context builds bounded original source around exactly one comment group.
+func (language) Context(source []byte, target types.Range, limits contracts.Limits) (types.Snippet, error) {
+	snippet, err := Context(source, target.Start, target.End, limits)
+	return snippet, languageFailure(err)
+}
+
+// DeclarationContext builds a bounded prefix of exactly one Go declaration.
+func (language) DeclarationContext(source []byte, target types.Range, limits contracts.Limits) (types.Snippet, error) {
+	snippet, err := DeclarationContext(source, target.Start, target.End, limits)
+	return snippet, languageFailure(err)
+}
+
+// Presets returns the concrete Go exclusions and their aggregate selector.
+func (language) Presets() contracts.PresetCatalog {
+	return contracts.PresetCatalog{
+		Concrete:   ConcretePresets(),
+		Aggregates: []contracts.Aggregate{{ID: SelectorAll, Presets: ConcretePresets()}},
+	}
+}
+
+// PathExcluded applies enabled Go path presets without inspecting source.
+func (language) PathExcluded(logicalPath string, enabled []string) bool {
+	return PathExcluded(logicalPath, enabled)
+}
+
+// SourceExcluded applies enabled Go structural presets to the supplied bytes.
+func (language) SourceExcluded(logicalPath string, source []byte, enabled []string) bool {
+	return SourceExcluded(logicalPath, source, enabled)
+}
+
+func languageFailure(err error) error {
+	var failure *Error
+	if errors.As(err, &failure) {
+		return &contracts.ParseError{Diagnostics: failure.Diagnostics}
+	}
+	return err
+}
 
 // parseMode collects comments and skips deprecated identifier resolution.
 // Resolution is not structural comment extraction, and this package does not
 // type-check.
 const parseMode = parser.ParseComments | parser.SkipObjectResolution
 
-// Position is a physical location in the source passed to Parse.
-//
-// Offset is a zero-based byte index. Line and Column are one-based. Column
-// counts bytes on the line. Line directives do not change these values.
-type Position struct {
-	Offset int
-	Line   int
-	Column int
-}
-
-// Comment is one Go comment group.
-//
-// Raw is the exact source text of the group. Text is its normalized content.
-// Start is the first byte of Raw. End is the first byte after Raw.
-type Comment struct {
-	Raw   string
-	Text  string
-	Start Position
-	End   Position
-}
-
-// Diagnostic is one parser message at a physical position.
-type Diagnostic struct {
-	Position Position
-	Msg      string
-}
-
 // Error is a Go syntax failure. Parse returns no comments with an Error.
 type Error struct {
-	Diagnostics []Diagnostic
+	Diagnostics []types.Diagnostic
 }
 
 // Error returns the diagnostics using physical line and column numbers.
@@ -111,7 +150,7 @@ func (e *Error) Error() string {
 // A nil src is empty input. On success the comment slice is non-nil and
 // ordered by physical start offset. On failure the error is *Error and the
 // slice is nil. Parse uses the same parse as ParseFile.
-func Parse(src []byte) ([]Comment, error) {
+func Parse(src []byte) ([]types.Comment, error) {
 	comments, _, err := ParseFile(src)
 	if err != nil {
 		return nil, err
@@ -136,7 +175,7 @@ func parseSource(src []byte) ([]byte, *token.File, *ast.File, error) {
 	}
 	tf := tokenFile(fset, file)
 	if tf == nil {
-		return src, nil, nil, &Error{Diagnostics: []Diagnostic{{Msg: "parsed file has no source position"}}}
+		return src, nil, nil, &Error{Diagnostics: []types.Diagnostic{{Msg: "parsed file has no source position"}}}
 	}
 	return src, tf, file, nil
 }
@@ -161,11 +200,11 @@ func tokenFile(fset *token.FileSet, file *ast.File) *token.File {
 func parserFailure(tf *token.File, err error) error {
 	var list scanner.ErrorList
 	if !asErrorList(err, &list) {
-		return &Error{Diagnostics: []Diagnostic{{Msg: err.Error()}}}
+		return &Error{Diagnostics: []types.Diagnostic{{Msg: err.Error()}}}
 	}
-	diags := make([]Diagnostic, len(list))
+	diags := make([]types.Diagnostic, len(list))
 	for i, item := range list {
-		diags[i] = Diagnostic{
+		diags[i] = types.Diagnostic{
 			Position: positionAt(tf, item.Pos.Offset),
 			Msg:      item.Msg,
 		}
@@ -193,26 +232,26 @@ func asErrorList(err error, list *scanner.ErrorList) bool {
 	return true
 }
 
-func positionAt(tf *token.File, offset int) Position {
+func positionAt(tf *token.File, offset int) types.Position {
 	if tf == nil {
-		return Position{Offset: offset}
+		return types.Position{Offset: offset}
 	}
 	// false keeps the physical line and column. The default Position method
 	// applies //line directives and can report another file name.
 	p := tf.PositionFor(tf.Pos(offset), false)
-	return Position{Offset: p.Offset, Line: p.Line, Column: p.Column}
+	return types.Position{Offset: p.Offset, Line: p.Line, Column: p.Column}
 }
 
-func commentFromGroup(src []byte, tf *token.File, group *ast.CommentGroup) (Comment, error) {
+func commentFromGroup(src []byte, tf *token.File, group *ast.CommentGroup) (types.Comment, error) {
 	if group == nil || len(group.List) == 0 {
-		return Comment{}, &Error{Diagnostics: []Diagnostic{{Msg: "empty comment group"}}}
+		return types.Comment{}, &Error{Diagnostics: []types.Diagnostic{{Msg: "empty comment group"}}}
 	}
 	parts := make([]string, 0, len(group.List))
 	firstStart := -1
 	lastEnd := -1
 	for _, c := range group.List {
 		if c == nil {
-			return Comment{}, &Error{Diagnostics: []Diagnostic{{Msg: "empty comment"}}}
+			return types.Comment{}, &Error{Diagnostics: []types.Diagnostic{{Msg: "empty comment"}}}
 		}
 		start := 0
 		if tf != nil {
@@ -220,7 +259,7 @@ func commentFromGroup(src []byte, tf *token.File, group *ast.CommentGroup) (Comm
 		}
 		end, err := commentEnd(src, start)
 		if err != nil {
-			return Comment{}, err
+			return types.Comment{}, err
 		}
 		if firstStart < 0 {
 			firstStart = start
@@ -228,14 +267,14 @@ func commentFromGroup(src []byte, tf *token.File, group *ast.CommentGroup) (Comm
 		lastEnd = end
 		text, err := commentText(src[start:end])
 		if err != nil {
-			return Comment{}, err
+			return types.Comment{}, err
 		}
 		parts = append(parts, text)
 	}
 	if firstStart < 0 || lastEnd < firstStart || lastEnd > len(src) {
-		return Comment{}, &Error{Diagnostics: []Diagnostic{{Msg: "comment range is outside the source"}}}
+		return types.Comment{}, &Error{Diagnostics: []types.Diagnostic{{Msg: "comment range is outside the source"}}}
 	}
-	return Comment{
+	return types.Comment{
 		Raw:   string(src[firstStart:lastEnd]),
 		Text:  strings.Join(parts, "\n"),
 		Start: positionAt(tf, firstStart),
@@ -248,8 +287,8 @@ func commentFromGroup(src []byte, tf *token.File, group *ast.CommentGroup) (Comm
 // whose length omits carriage returns that were present in src.
 func commentEnd(src []byte, start int) (int, error) {
 	if start < 0 || start+1 >= len(src) || src[start] != '/' {
-		return 0, &Error{Diagnostics: []Diagnostic{{
-			Position: Position{Offset: start},
+		return 0, &Error{Diagnostics: []types.Diagnostic{{
+			Position: types.Position{Offset: start},
 			Msg:      "comment does not start at a slash",
 		}}}
 	}
@@ -266,13 +305,13 @@ func commentEnd(src []byte, start int) (int, error) {
 				return i + 2, nil
 			}
 		}
-		return 0, &Error{Diagnostics: []Diagnostic{{
-			Position: Position{Offset: start},
+		return 0, &Error{Diagnostics: []types.Diagnostic{{
+			Position: types.Position{Offset: start},
 			Msg:      "unterminated block comment",
 		}}}
 	default:
-		return 0, &Error{Diagnostics: []Diagnostic{{
-			Position: Position{Offset: start},
+		return 0, &Error{Diagnostics: []types.Diagnostic{{
+			Position: types.Position{Offset: start},
 			Msg:      "comment does not start at a slash",
 		}}}
 	}
@@ -291,5 +330,5 @@ func commentText(raw []byte) (string, error) {
 		body = strings.ReplaceAll(body, "\r\n", "\n")
 		return body, nil
 	}
-	return "", &Error{Diagnostics: []Diagnostic{{Msg: "comment bytes are not a Go comment"}}}
+	return "", &Error{Diagnostics: []types.Diagnostic{{Msg: "comment bytes are not a Go comment"}}}
 }

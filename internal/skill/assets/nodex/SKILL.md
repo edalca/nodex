@@ -31,20 +31,47 @@ nodex index generate
 
 before relying on IDs. Run `nodex index status` again after generation and use IDs only when the index is current.
 
+## Choose source and workspace
+
+With no global options, Nodex discovers the source root from the invocation directory's ancestors and uses that same root as the workspace base. Its `.nodex/` directory owns both `ignore.json` and `index/`.
+
+To inspect a repository without writing Nodex state into it, select the source with `--root` from a temporary workspace:
+
+```bash
+workspace="$(mktemp -d)"
+cd "$workspace"
+
+nodex --root /path/to/project index generate
+nodex --root /path/to/project index status
+nodex --root /path/to/project index comments
+nodex --root /path/to/project index declarations
+nodex --root /path/to/project index show C000001 D000001
+```
+
+Use actual IDs returned by the current index for `show`. Keep the same workspace and source selection for subsequent commands.
+
+Explicit `--root` selects source only, skips ancestor discovery, and defaults the workspace to invocation cwd. This temporary workspace also owns `.nodex/ignore.json`; authorized temporary ignore experimentation there leaves the source project's configuration untouched. The source project's `.nodex/ignore.json` does not override that workspace policy.
+
+`--out-dir <path>` overrides the workspace base with an existing directory. State always lives at `<out-dir>/.nodex/`. For example, `nodex --root /path/to/project --out-dir "$workspace" index status` uses that workspace from any cwd. To use project-local state with explicit `--root`, set `--out-dir /path/to/project` too.
+
+Both global options precede the top-level command, and relative paths are relative to invocation cwd. `--out-dir` does not affect source discovery or Agent Skill installation. State-independent commands accept well-formed global options without opening their paths. No control-directory symlink is needed or supported.
+
 ## Compact comment corpus
 
 `nodex index comments` is the compact comment corpus. Each entry contains only:
 
 - the comment ID
+- the logical source-root-relative file path after `file:`
 - the normalized comment text
 
-Do not infer a source location from `nodex index comments`. The corpus has no file path and no source position.
+Discovery provides an ID, a logical file path, and a compact fact. File paths are relative to the source root, including when using a detached workspace. Use `nodex index show` for physical lines and bounded source context.
 
 ## Compact declaration facts
 
 `nodex index declarations` lists every indexed declaration. Each entry contains only:
 
 - the declaration ID
+- the logical source-root-relative file path after `file:`
 - the declaration kind
 - the declared names after `names:`, separated by a comma and a space when there are several, or `names:` with no value when the declaration has no name
 - `doc:` followed by the comment ID of the directly associated documentation comment, or `doc: none`
@@ -55,7 +82,7 @@ The declaration list includes declarations that have direct documentation and de
 
 ## Source location and context
 
-For source location or source context, use:
+For detailed physical source location and bounded source context, use:
 
 ```bash
 nodex index show <ID...>
@@ -73,6 +100,6 @@ When Nodex supports the relevant source, do not grep or regex the repository for
 
 ## Ignore configuration
 
-`nodex ignore list` shows the project's source-exclusion configuration. Inspect it when the included source set matters.
+`nodex ignore list` shows the selected workspace's source-exclusion configuration. Use the same `--root` and `--out-dir` options as the index commands when operating detached. Inspect it when the included source set matters.
 
 Do not run `nodex ignore enable` or `nodex ignore disable` without explicit user intent. Changing ignore configuration changes the source set. If ignore configuration changes, treat the existing generated index as requiring a new status and generation cycle. Run `nodex index status` again, and run `nodex index generate` when the index is missing or stale, before relying on IDs.

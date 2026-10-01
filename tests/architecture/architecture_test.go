@@ -20,11 +20,14 @@ import (
 const (
 	maxInternalSegments = 2
 
-	ruleDepth      = "depth: "
-	ruleForbidden  = "forbidden package: "
-	ruleCrossRoot  = "cross-root subpackage import: "
-	ruleCycle      = "root cycle: "
-	ruleHomonymous = "homonymous root file: "
+	ruleDepth             = "depth: "
+	ruleForbidden         = "forbidden package: "
+	ruleCrossRoot         = "cross-root subpackage import: "
+	ruleCycle             = "root cycle: "
+	ruleHomonymous        = "homonymous root file: "
+	ruleCanonicalTests    = "canonical test file: "
+	ruleSyntaxDirection   = "syntax dependency direction: "
+	ruleSyntaxComposition = "syntax language composition: "
 )
 
 // forbiddenPackageNames are escape-hatch package names. Matching is exact on a
@@ -37,12 +40,14 @@ var forbiddenPackageNames = map[string]struct{}{
 }
 
 // pkg is one Go package in a module. relDir is the slash-separated path from
-// the module root. goFiles lists non-test source files by base name.
+// the module root. goFiles and testFiles list source files by base name.
 type pkg struct {
-	path    string
-	relDir  string
-	goFiles []string
-	imports []string
+	path          string
+	relDir        string
+	goFiles       []string
+	testFiles     []string
+	imports       []string
+	importsByFile map[string][]string
 }
 
 // check reports structural violations for the given packages. Roots are derived
@@ -54,8 +59,44 @@ func check(modulePath string, pkgs []pkg) []string {
 	violations = append(violations, crossRootSubpackageViolations(modulePath, pkgs)...)
 	violations = append(violations, rootCycleViolations(modulePath, pkgs)...)
 	violations = append(violations, homonymousRootFileViolations(pkgs)...)
+	violations = append(violations, canonicalTestFileViolations(pkgs)...)
+	violations = append(violations, syntaxDependencyViolations(modulePath, pkgs)...)
 	sort.Strings(violations)
 	return violations
+}
+
+// syntaxDependencyViolations keeps private syntax packages below the facade
+// and confines implementation imports to the one production composition file.
+// contracts and types are vocabulary and agreements, not implementations.
+func syntaxDependencyViolations(modulePath string, pkgs []pkg) []string {
+	var out []string
+	root := modulePath + "/internal/syntax"
+	for _, p := range pkgs {
+		if strings.HasPrefix(p.relDir, "internal/syntax/") {
+			for _, imp := range p.imports {
+				if imp == root {
+					out = append(out, ruleSyntaxDirection+p.path+" imports "+imp)
+				}
+			}
+		}
+		if p.relDir != "internal/syntax" {
+			continue
+		}
+		for file, imports := range p.importsByFile {
+			if file == "languages.go" || strings.HasSuffix(file, "_test.go") {
+				continue
+			}
+			for _, imp := range imports {
+				rel, ok := relFromImport(modulePath, imp)
+				segments, internal := internalSegments(rel)
+				if !ok || !internal || len(segments) != 2 || segments[0] != "syntax" || segments[1] == "contracts" || segments[1] == "types" {
+					continue
+				}
+				out = append(out, ruleSyntaxComposition+p.relDir+"/"+file+" imports "+imp+" outside languages.go")
+			}
+		}
+	}
+	return out
 }
 
 func depthViolations(pkgs []pkg) []string {
@@ -156,6 +197,23 @@ func homonymousRootFileViolations(pkgs []pkg) []string {
 			continue
 		}
 		out = append(out, ruleHomonymous+p.relDir+" missing "+want)
+	}
+	return out
+}
+
+// canonicalTestFileViolations requires one directory-named test file when an
+// internal package has tests. Packages without tests need no test file.
+func canonicalTestFileViolations(pkgs []pkg) []string {
+	var out []string
+	for _, p := range pkgs {
+		if _, internal := internalSegments(p.relDir); !internal || len(p.testFiles) == 0 {
+			continue
+		}
+		want := path.Base(p.relDir) + "_test.go"
+		if len(p.testFiles) == 1 && p.testFiles[0] == want {
+			continue
+		}
+		out = append(out, ruleCanonicalTests+p.relDir+" requires only "+want)
 	}
 	return out
 }
@@ -299,12 +357,18 @@ func loadModule(root string) (string, []pkg, error) {
 		}
 		if !strings.HasSuffix(entry.Name(), "_test.go") {
 			info.goFiles = append(info.goFiles, entry.Name())
+		} else {
+			info.testFiles = append(info.testFiles, entry.Name())
 		}
 		imports, err := fileImports(filePath)
 		if err != nil {
 			return err
 		}
 		info.imports = append(info.imports, imports...)
+		if info.importsByFile == nil {
+			info.importsByFile = make(map[string][]string)
+		}
+		info.importsByFile[entry.Name()] = imports
 		return nil
 	})
 	if err != nil {
@@ -313,6 +377,7 @@ func loadModule(root string) (string, []pkg, error) {
 	out := make([]pkg, 0, len(byDir))
 	for _, info := range byDir {
 		sort.Strings(info.goFiles)
+		sort.Strings(info.testFiles)
 		sort.Strings(info.imports)
 		out = append(out, *info)
 	}
@@ -545,5 +610,130 @@ func TestRejectsMissingHomonymousRootFile(t *testing.T) {
 	requireOnlyRule(t, violations, ruleHomonymous)
 	if violations[0] != "homonymous root file: internal/index missing index.go" {
 		t.Fatalf("violation = %q", violations[0])
+	}
+}
+
+// TestCanonicalTestFileScanner checks file discovery as well as the rule,
+// including extra sibling tests in both same-package and external packages.
+func TestCanonicalTestFileScanner(t *testing.T) {
+	cases := []struct {
+		name     string
+		dir      string
+		files    map[string]string
+		rejected bool
+	}{
+		{"no tests", "internal/alpha", nil, false},
+		{"canonical root", "internal/alpha", map[string]string{"alpha_test.go": "alpha"}, false},
+		{"canonical subpackage", "internal/alpha/parse", map[string]string{"parse_test.go": "parse_test"}, false},
+		{"extra sibling", "internal/alpha", map[string]string{"alpha_test.go": "alpha", "extra_test.go": "alpha"}, true},
+		{"extra external sibling", "internal/alpha", map[string]string{"alpha_test.go": "alpha", "extra_test.go": "alpha_test"}, true},
+		{"misnamed root", "internal/alpha", map[string]string{"other_test.go": "alpha"}, true},
+		{"misnamed subpackage", "internal/alpha/parse", map[string]string{"alpha_test.go": "parse"}, true},
+		{"outside internal", "cmd/alpha", map[string]string{"alpha_test.go": "alpha", "extra_test.go": "alpha"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/nodex\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Join(root, filepath.FromSlash(tc.dir))
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			name := path.Base(tc.dir)
+			if err := os.WriteFile(filepath.Join(dir, name+".go"), []byte("package "+name+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			for file, pkgName := range tc.files {
+				if err := os.WriteFile(filepath.Join(dir, file), []byte("package "+pkgName+"\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			module, pkgs, err := loadModule(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(pkgs) != 1 || len(pkgs[0].testFiles) != len(tc.files) {
+				t.Fatalf("scanner did not retain test files: %+v", pkgs)
+			}
+			violations := check(module, pkgs)
+			if tc.rejected {
+				requireOnlyRule(t, violations, ruleCanonicalTests)
+			} else {
+				requireClean(t, violations)
+			}
+		})
+	}
+}
+
+func TestSyntaxPrivateBoundaries(t *testing.T) {
+	const module = "github.com/edalca/nodex"
+	for _, private := range []string{"contracts", "types", "golang"} {
+		for _, consumer := range []string{"internal/index", "internal/project", "cmd/nodex"} {
+			t.Run(consumer+" imports "+private, func(t *testing.T) {
+				p := pkg{path: module + "/" + consumer, relDir: consumer,
+					imports: []string{module + "/internal/syntax/" + private}}
+				requireOnlyRule(t, check(module, []pkg{p}), ruleCrossRoot)
+			})
+		}
+		t.Run(private+" imports facade", func(t *testing.T) {
+			p := pkg{path: module + "/internal/syntax/" + private, relDir: "internal/syntax/" + private,
+				imports: []string{module + "/internal/syntax"}}
+			requireOnlyRule(t, check(module, []pkg{p}), ruleSyntaxDirection)
+		})
+	}
+	requireClean(t, check(module, []pkg{
+		{path: module + "/internal/index", relDir: "internal/index", imports: []string{module + "/internal/syntax"}},
+		{path: module + "/internal/syntax/contracts", relDir: "internal/syntax/contracts", imports: []string{module + "/internal/syntax/types"}},
+		{path: module + "/internal/syntax/golang", relDir: "internal/syntax/golang", imports: []string{module + "/internal/syntax/contracts", module + "/internal/syntax/types"}},
+	}))
+}
+
+func TestLanguageImportsRequireCompositionFile(t *testing.T) {
+	const module = "github.com/edalca/nodex"
+	for _, implementation := range []string{"golang", "fixture"} {
+		imp := module + "/internal/syntax/" + implementation
+		for _, file := range []string{"syntax.go", "presets.go", "other.go"} {
+			t.Run(implementation+" in "+file, func(t *testing.T) {
+				p := pkg{path: module + "/internal/syntax", relDir: "internal/syntax", importsByFile: map[string][]string{file: {imp}}}
+				requireOnlyRule(t, check(module, []pkg{p}), ruleSyntaxComposition)
+			})
+		}
+		p := pkg{path: module + "/internal/syntax", relDir: "internal/syntax", importsByFile: map[string][]string{
+			"languages.go": {imp}, "syntax_test.go": {imp},
+			"syntax.go": {module + "/internal/syntax/contracts", module + "/internal/syntax/types"},
+		}}
+		requireClean(t, check(module, []pkg{p}))
+	}
+}
+
+// TestCompositionScanner exercises the actual Go import parser with renamed
+// import bindings, rather than relying only on hand-built package metadata.
+func TestCompositionScanner(t *testing.T) {
+	for _, file := range []string{"languages.go", "syntax.go"} {
+		t.Run(file, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/nodex\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Join(root, "internal", "syntax")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			source := "package syntax\nimport implementation \"example.test/nodex/internal/syntax/fixture\"\nvar _ = implementation.New\n"
+			if err := os.WriteFile(filepath.Join(dir, file), []byte(source), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			module, pkgs, err := loadModule(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if file == "languages.go" {
+				requireClean(t, check(module, pkgs))
+			} else {
+				requireOnlyRule(t, check(module, pkgs), ruleSyntaxComposition)
+			}
+		})
 	}
 }

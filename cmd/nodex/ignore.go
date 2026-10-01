@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/edalca/nodex/internal/ignore"
-	"github.com/edalca/nodex/internal/project"
 	"github.com/edalca/nodex/internal/syntax"
 )
 
@@ -30,12 +29,12 @@ func dispatchIgnore(inv invocation, args []string, getwd func() (string, error),
 			fmt.Fprintln(stderr, "ignore list takes no arguments")
 			return errors.New("usage")
 		}
-		dir, err := locate(inv, getwd)
+		dirs, err := locations(inv, getwd)
 		if err != nil {
 			fmt.Fprintf(stderr, "nodex: %v\n", err)
 			return err
 		}
-		text, err := ignoreList(dir)
+		text, err := ignoreList(dirs.WorkspaceBase)
 		if err != nil {
 			fmt.Fprintf(stderr, "nodex: %v\n", err)
 			return err
@@ -51,15 +50,15 @@ func dispatchIgnore(inv invocation, args []string, getwd func() (string, error),
 			fmt.Fprintf(stderr, "nodex: %v\n", err)
 			return err
 		}
-		dir, err := locate(inv, getwd)
+		dirs, err := locations(inv, getwd)
 		if err != nil {
 			fmt.Fprintf(stderr, "nodex: %v\n", err)
 			return err
 		}
 		if args[0] == "enable" {
-			err = ignoreEnable(dir, selector)
+			err = ignoreEnable(dirs.WorkspaceBase, selector)
 		} else {
-			err = ignoreDisable(dir, selector)
+			err = ignoreDisable(dirs.WorkspaceBase, selector)
 		}
 		if err != nil {
 			fmt.Fprintf(stderr, "nodex: %v\n", err)
@@ -79,12 +78,8 @@ func formatSelectors(selectors []string) string {
 	return strings.Join(selectors, "\n") + "\n"
 }
 
-func ignoreList(dir string) (string, error) {
-	opened, err := project.Open(dir)
-	if err != nil {
-		return "", err
-	}
-	policy, err := loadPolicy(opened.Root())
+func ignoreList(workspaceBase string) (string, error) {
+	policy, err := loadPolicy(workspaceBase)
 	if err != nil {
 		return "", err
 	}
@@ -95,32 +90,28 @@ func ignoreList(dir string) (string, error) {
 	return string(data), nil
 }
 
-func ignoreEnable(dir, selector string) error {
+func ignoreEnable(workspaceBase, selector string) error {
 	add, err := syntax.ExpandSelector(selector)
 	if err != nil {
 		return err
 	}
-	return editIgnore(dir, func(policy ignore.Policy) (ignore.Policy, error) {
+	return editIgnore(workspaceBase, func(policy ignore.Policy) (ignore.Policy, error) {
 		return ignore.New(unionPresets(policy.Presets(), add), policy.Excludes())
 	})
 }
 
-func ignoreDisable(dir, selector string) error {
+func ignoreDisable(workspaceBase, selector string) error {
 	remove, err := syntax.ExpandSelector(selector)
 	if err != nil {
 		return err
 	}
-	return editIgnore(dir, func(policy ignore.Policy) (ignore.Policy, error) {
+	return editIgnore(workspaceBase, func(policy ignore.Policy) (ignore.Policy, error) {
 		return ignore.New(withoutPresets(policy.Presets(), remove), policy.Excludes())
 	})
 }
 
-func editIgnore(dir string, edit func(ignore.Policy) (ignore.Policy, error)) error {
-	opened, err := project.Open(dir)
-	if err != nil {
-		return err
-	}
-	policy, err := loadPolicy(opened.Root())
+func editIgnore(workspaceBase string, edit func(ignore.Policy) (ignore.Policy, error)) error {
+	policy, err := loadPolicy(workspaceBase)
 	if err != nil {
 		return err
 	}
@@ -134,7 +125,7 @@ func editIgnore(dir string, edit func(ignore.Policy) (ignore.Policy, error)) err
 	if policy.Identity() == next.Identity() {
 		return nil
 	}
-	return publishIgnore(opened.Root(), next)
+	return publishIgnore(workspaceBase, next)
 }
 
 func unionPresets(current, add []string) []string {
@@ -171,7 +162,7 @@ func withoutPresets(current, remove []string) []string {
 // The containing directory is synced afterward. A symbolic link named .nodex
 // or ignore.json is rejected and is not followed. .nodex/index is not
 // modified. The temporary file is removed if publication fails.
-func publishIgnore(root string, policy ignore.Policy) error {
+func publishIgnore(workspaceBase string, policy ignore.Policy) error {
 	data, err := policy.Encode()
 	if err != nil {
 		return err
@@ -187,7 +178,7 @@ func publishIgnore(root string, policy ignore.Policy) error {
 		return err
 	}
 
-	nodexPath := filepath.Join(root, ".nodex")
+	nodexPath := filepath.Join(workspaceBase, ".nodex")
 	created := false
 	info, err := os.Lstat(nodexPath)
 	switch {

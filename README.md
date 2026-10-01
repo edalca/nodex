@@ -38,9 +38,9 @@ nodex index show C000001
 
 `index generate` scans the project and builds the index.
 
-`index comments` gives you the list of indexed comments with their IDs and normalized text.
+`index comments` gives you the list of indexed comments with their IDs, logical source-relative file paths, and normalized text.
 
-`index declarations` gives you each declaration's kind, names, and the ID of its directly attached documentation comment, or `doc: none` when there is none.
+`index declarations` gives you each declaration's ID, logical source-relative file path, kind, names, and the ID of its directly attached documentation comment, or `doc: none` when there is none.
 
 `index show` takes a comment ID or a declaration ID and shows you where it came from, together with the surrounding code.
 
@@ -87,7 +87,7 @@ nodex index show C000001
 nodex index show D000001
 ```
 
-`index comments` is the compact normalized comment text. `index declarations` is the compact list of declarations and their direct documentation links. `index show` is the source location and a bounded piece of the original source. The show result for a comment does not print the normalized comment a second time, and the show result for a declaration does not print the documentation comment as a separate copy.
+`index comments` provides comment IDs, logical file paths, and compact normalized text. `index declarations` provides declaration IDs, logical file paths, and compact facts with direct documentation links. `index show` is the source location and a bounded piece of the original source. The show result for a comment does not print the normalized comment a second time, and the show result for a declaration does not print the documentation comment as a separate copy.
 
 This keeps the first pass simple and lets you fetch source context only when it is actually useful.
 
@@ -134,7 +134,7 @@ nodex skill ...
 
 ### `index generate`
 
-Scans the project and writes the index under:
+Scans the source project and writes the index under the selected workspace base:
 
 ```text
 .nodex/index/
@@ -144,13 +144,30 @@ Scans the project and writes the index under:
 
 Prints the current comments as compact Markdown.
 
-Each entry contains a comment ID and its normalized text.
+Each entry contains only a comment ID, its logical source-root-relative file path, and its normalized text.
+
+```md
+## C000001
+
+file: `internal/example/example.go`
+
+Example adds nothing.
+```
 
 ### `index declarations`
 
 Prints every indexed declaration as compact Markdown.
 
-Each entry contains a declaration ID, its kind, its names, and either a comment ID or `doc: none`. Several names are written as `names: A, B`. A declaration with no name uses `names:` with nothing after it.
+Each entry contains only a declaration ID, its logical source-root-relative file path, its kind, its names, and either a comment ID or `doc: none`. Several names are written as `names: A, B`. A declaration with no name uses `names:` with nothing after it.
+
+```md
+## D000001
+
+file: `internal/example/example.go`
+kind: function
+names: Example
+doc: C000001
+```
 
 ### `index show`
 
@@ -177,32 +194,71 @@ corrupt
 
 Shows the Nodex version and information about the current build.
 
-## Project root
+## Source root and workspace
 
-Nodex normally starts from your current directory and walks upward until it finds the nearest project marker.
-
-It recognizes:
-
-```text
-.nodex/
-.git
-```
-
-If both exist in the same directory, `.nodex` takes precedence.
-
-If Nodex does not find either marker, it uses the directory where the search started.
-
-It does not use files such as `go.mod` or `go.work` to decide where the project begins.
-
-You can choose the project root yourself:
+In the default project-local workflow, Nodex reads source and stores state in the same project:
 
 ```bash
-nodex --root /path/to/project index status
+cd /srv/agentary
+nodex index generate
 ```
 
-`--root` must appear before the command.
+The source root is `/srv/agentary`, the workspace base is `/srv/agentary`, and the control directory is `/srv/agentary/.nodex/`. From a project subdirectory, both locations use the discovered ancestor root.
 
-These commands do not need a project:
+Nodex normally starts from the invocation working directory and walks upward to the nearest `.nodex/` or `.git` marker. A real `.nodex` directory takes precedence in the same directory; `.git` may be a directory or regular file. Symbolic-link markers and invalid marker types are errors. Without a marker, Nodex uses the invocation directory. It does not use `go.mod` or `go.work` to find the root.
+
+To inspect a source project without writing Nodex state into it, use a separate existing workspace:
+
+```bash
+mkdir -p /tmp/agentary
+cd /tmp/agentary
+nodex --root /srv/agentary index generate
+nodex --root /srv/agentary index status
+```
+
+`--root` selects only the source project and skips ancestor discovery. **An explicit `--root` changes the default workspace base to the invocation working directory.** Here all state belongs to `/tmp/agentary/.nodex/`, including `ignore.json` and `index/`. Nodex does not create or modify `/srv/agentary/.nodex/`, and any ignore document there does not override the workspace policy.
+
+Use `--out-dir` to select a workspace base explicitly:
+
+```bash
+mkdir -p /tmp/nodex-agentary
+nodex \
+  --root /srv/agentary \
+  --out-dir /tmp/nodex-agentary \
+  index generate
+```
+
+This stores state under `/tmp/nodex-agentary/.nodex/`. `--out-dir` must identify an existing directory; it selects the base containing `.nodex`, not `.nodex` itself or an index file. It does not affect source discovery. Without `--root`, source discovery still starts from the invocation directory.
+
+To retain project-local state with an explicit source root:
+
+```bash
+nodex \
+  --root /srv/agentary \
+  --out-dir /srv/agentary \
+  index generate
+```
+
+The global syntax is:
+
+```text
+nodex [--root <path>] [--out-dir <path>] <command> ...
+```
+
+Both options must appear before the top-level command, in either order. Relative paths are interpreted from the invocation working directory. The `--root=<path>` and `--out-dir=<path>` forms are also accepted; duplicate options and missing values are usage errors.
+
+| Options | Source root | Workspace base |
+| --- | --- | --- |
+| Neither | Discovered from invocation cwd | Resolved source root |
+| `--root` only | Explicit root | Invocation cwd |
+| `--out-dir` only | Discovered from invocation cwd | Explicit out-dir |
+| Both | Explicit root | Explicit out-dir |
+
+Every mode reads/writes ignore configuration at `<workspace>/.nodex/ignore.json` and index state at `<workspace>/.nodex/index/`. Read commands never create state or regenerate an index. Source discovery always excludes `.git` and `.nodex` directories at any depth, including a workspace's control directory inside the source tree. Ordinary files elsewhere in that workspace remain ordinary source candidates.
+
+Snapshot currentness compares the effective policy identity and source-relative byte fingerprints. Absolute source and workspace paths are not stored; an identical source tree can use the same snapshot.
+
+These commands do not open a source project or workspace, and accept well-formed global options without inspecting their paths:
 
 ```text
 nodex version
@@ -211,9 +267,11 @@ nodex skill targets
 nodex skill show
 ```
 
+`--out-dir` has no effect on any skill command. Project-local skill installation still uses the resolved or explicit source root, and `--global` still uses the user's home.
+
 ## Ignoring files
 
-Project-specific ignore settings live in:
+Ignore settings for the selected workspace live in:
 
 ```text
 .nodex/ignore.json

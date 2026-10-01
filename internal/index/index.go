@@ -44,7 +44,7 @@
 // returns no index. A declaration with no associated documentation comment
 // is stored with an absent documentation ID.
 //
-// Persist writes a finished index under the project root. The persisted
+// Persist writes a finished index under the workspace base. The persisted
 // state is schema 1 and three files: comments.jsonl, declarations.jsonl,
 // then snapshot.json. snapshot.json is the commit marker. It records the
 // caller-supplied ignore policy identity, the SHA-256 digest and count of

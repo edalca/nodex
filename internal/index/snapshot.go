@@ -17,7 +17,7 @@ const (
 	// SchemaVersion is the only snapshot schema this package writes or accepts.
 	SchemaVersion = 1
 
-	// IndexDir is the generated index directory relative to the project root.
+	// IndexDir is the generated index directory relative to the workspace base.
 	IndexDir = ".nodex/index"
 
 	// SnapshotPath is the logical path of the snapshot commit marker.

@@ -3,6 +3,9 @@ package golang
 import (
 	"go/ast"
 	"go/token"
+
+	"github.com/edalca/nodex/internal/syntax/contracts"
+	"github.com/edalca/nodex/internal/syntax/types"
 )
 
 // DeclarationContext returns the bounded structural source of the declaration
@@ -22,23 +25,23 @@ import (
 // limits allow. The first line is the identifying portion and is kept even
 // when the rest of the declaration is omitted. The slice is not reformatted
 // and it contains no inserted ellipsis.
-func DeclarationContext(src []byte, start, end Position, limits Limits) (Snippet, error) {
+func DeclarationContext(src []byte, start, end types.Position, limits contracts.Limits) (types.Snippet, error) {
 	if src == nil {
 		src = []byte{}
 	}
 	if err := rangeShape(src, start, end); err != nil {
-		return Snippet{}, ErrMalformedDeclaration
+		return types.Snippet{}, contracts.ErrMalformedDeclaration
 	}
 	src, tf, file, err := parseSource(src)
 	if err != nil {
-		return Snippet{}, err
+		return types.Snippet{}, err
 	}
 	if positionAt(tf, start.Offset) != start || positionAt(tf, end.Offset) != end {
-		return Snippet{}, ErrMalformedDeclaration
+		return types.Snippet{}, contracts.ErrMalformedDeclaration
 	}
 	decl, err := matchDeclaration(src, tf, file, start, end)
 	if err != nil {
-		return Snippet{}, err
+		return types.Snippet{}, err
 	}
 	container := byteSpan{start: decl.Start.Offset, end: decl.End.Offset}
 	focusEnd := endOfLine(src, container.start)
@@ -47,21 +50,21 @@ func DeclarationContext(src []byte, start, end Position, limits Limits) (Snippet
 	}
 	from, to := boundSnippet(src, tf, container, byteSpan{start: container.start, end: focusEnd}, normalizeLimits(limits))
 	if from < container.start || to > container.end || from > to {
-		return Snippet{}, ErrMalformedDeclaration
+		return types.Snippet{}, contracts.ErrMalformedDeclaration
 	}
-	return Snippet{
+	return types.Snippet{
 		Start: positionAt(tf, from),
 		End:   positionAt(tf, to),
 		Text:  string(src[from:to]),
 	}, nil
 }
 
-func matchDeclaration(src []byte, tf *token.File, file *ast.File, start, end Position) (Declaration, error) {
+func matchDeclaration(src []byte, tf *token.File, file *ast.File, start, end types.Position) (types.Declaration, error) {
 	decls, err := declarationsFrom(src, tf, file)
 	if err != nil {
-		return Declaration{}, err
+		return types.Declaration{}, err
 	}
-	var matched []Declaration
+	var matched []types.Declaration
 	for _, decl := range decls {
 		if decl.Start == start && decl.End == end {
 			matched = append(matched, decl)
@@ -69,10 +72,10 @@ func matchDeclaration(src []byte, tf *token.File, file *ast.File, start, end Pos
 	}
 	switch len(matched) {
 	case 0:
-		return Declaration{}, ErrDeclarationNotFound
+		return types.Declaration{}, contracts.ErrDeclarationNotFound
 	case 1:
 		return matched[0], nil
 	default:
-		return Declaration{}, ErrAmbiguousDeclaration
+		return types.Declaration{}, contracts.ErrAmbiguousDeclaration
 	}
 }

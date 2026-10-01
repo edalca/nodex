@@ -1,22 +1,11 @@
 package golang
 
 import (
-	"errors"
 	"go/ast"
 	"go/token"
 	"sort"
-)
 
-var (
-	// ErrMalformedDeclaration means the supplied range is not a coherent
-	// physical range of the source bytes.
-	ErrMalformedDeclaration = errors.New("declaration range is malformed")
-
-	// ErrDeclarationNotFound means the range is not exactly one declaration.
-	ErrDeclarationNotFound = errors.New("declaration range does not match a declaration")
-
-	// ErrAmbiguousDeclaration means the range matches more than one declaration.
-	ErrAmbiguousDeclaration = errors.New("declaration range matches more than one declaration")
+	"github.com/edalca/nodex/internal/syntax/types"
 )
 
 const (
@@ -42,36 +31,13 @@ const (
 	KindField = "field"
 )
 
-// Declaration is one structural declaration fact.
-//
-// Kind is one of the Kind constants. Names are the identifiers this node
-// declares, in source order. Names is empty when the node declares none,
-// which is how an embedded field is represented. Start and End are the
-// half-open physical extent of the declaration itself. A documentation
-// comment that sits outside that extent is not part of the extent.
-//
-// HasDoc reports whether the node’s own documentation comment is present.
-// DocStart and DocEnd are that comment’s physical range when HasDoc is
-// true. They are not a nearby comment, a parent declaration’s comment, or
-// a child declaration’s comment. A nil documentation field leaves HasDoc
-// false.
-type Declaration struct {
-	Kind     string
-	Names    []string
-	Start    Position
-	End      Position
-	HasDoc   bool
-	DocStart Position
-	DocEnd   Position
-}
-
 // ParseFile interprets src as Go source.
 //
 // A nil src is empty input. On success the comment slice and the
 // declaration slice are non-nil. Comments are ordered by physical start
 // offset. Declarations follow the syntax tree in preorder. Both come from
 // the same parse. On failure the error is *Error and both slices are nil.
-func ParseFile(src []byte) ([]Comment, []Declaration, error) {
+func ParseFile(src []byte) ([]types.Comment, []types.Declaration, error) {
 	src, tf, file, err := parseSource(src)
 	if err != nil {
 		return nil, nil, err
@@ -87,8 +53,8 @@ func ParseFile(src []byte) ([]Comment, []Declaration, error) {
 	return comments, decls, nil
 }
 
-func commentsFrom(src []byte, tf *token.File, file *ast.File) ([]Comment, error) {
-	comments := make([]Comment, 0, len(file.Comments))
+func commentsFrom(src []byte, tf *token.File, file *ast.File) ([]types.Comment, error) {
+	comments := make([]types.Comment, 0, len(file.Comments))
 	for _, group := range file.Comments {
 		comment, err := commentFromGroup(src, tf, group)
 		if err != nil {
@@ -102,11 +68,11 @@ func commentsFrom(src []byte, tf *token.File, file *ast.File) ([]Comment, error)
 	return comments, nil
 }
 
-func declarationsFrom(src []byte, tf *token.File, file *ast.File) ([]Declaration, error) {
+func declarationsFrom(src []byte, tf *token.File, file *ast.File) ([]types.Declaration, error) {
 	if file == nil {
-		return nil, &Error{Diagnostics: []Diagnostic{{Msg: "parsed file is missing"}}}
+		return nil, &Error{Diagnostics: []types.Diagnostic{{Msg: "parsed file is missing"}}}
 	}
-	out := make([]Declaration, 0)
+	out := make([]types.Declaration, 0)
 	if file.Package.IsValid() && file.Name != nil {
 		decl, err := packageDecl(src, tf, file)
 		if err != nil {
@@ -161,16 +127,16 @@ func declarationsFrom(src []byte, tf *token.File, file *ast.File) ([]Declaration
 	return out, nil
 }
 
-func packageDecl(src []byte, tf *token.File, file *ast.File) (Declaration, error) {
+func packageDecl(src []byte, tf *token.File, file *ast.File) (types.Declaration, error) {
 	if file.Name == nil || file.Name.Name == "" {
-		return Declaration{}, &Error{Diagnostics: []Diagnostic{{Msg: "package declaration has no name"}}}
+		return types.Declaration{}, &Error{Diagnostics: []types.Diagnostic{{Msg: "package declaration has no name"}}}
 	}
 	return oneDecl(src, tf, KindPackage, []string{file.Name.Name}, file.Package, file.Name.End(), file.Doc)
 }
 
-func functionDecl(src []byte, tf *token.File, node *ast.FuncDecl) (Declaration, error) {
+func functionDecl(src []byte, tf *token.File, node *ast.FuncDecl) (types.Declaration, error) {
 	if node == nil || node.Name == nil || node.Name.Name == "" || node.Type == nil {
-		return Declaration{}, &Error{Diagnostics: []Diagnostic{{Msg: "function declaration is incomplete"}}}
+		return types.Declaration{}, &Error{Diagnostics: []types.Diagnostic{{Msg: "function declaration is incomplete"}}}
 	}
 	kind := KindFunction
 	if node.Recv != nil {
@@ -179,16 +145,16 @@ func functionDecl(src []byte, tf *token.File, node *ast.FuncDecl) (Declaration, 
 	return oneDecl(src, tf, kind, []string{node.Name.Name}, node.Pos(), node.End(), node.Doc)
 }
 
-func generalDecls(src []byte, tf *token.File, node *ast.GenDecl) ([]Declaration, error) {
+func generalDecls(src []byte, tf *token.File, node *ast.GenDecl) ([]types.Declaration, error) {
 	if node == nil {
-		return nil, &Error{Diagnostics: []Diagnostic{{Msg: "declaration is missing"}}}
+		return nil, &Error{Diagnostics: []types.Diagnostic{{Msg: "declaration is missing"}}}
 	}
 	specKind, groupedKind, ok := declarationKinds(node.Tok)
 	if !ok {
 		return nil, nil
 	}
 	if len(node.Specs) == 0 && !node.Lparen.IsValid() {
-		return nil, &Error{Diagnostics: []Diagnostic{{Msg: "declaration has no specs"}}}
+		return nil, &Error{Diagnostics: []types.Diagnostic{{Msg: "declaration has no specs"}}}
 	}
 	names, err := namesOfSpecs(node.Specs)
 	if err != nil {
@@ -203,13 +169,13 @@ func generalDecls(src []byte, tf *token.File, node *ast.GenDecl) ([]Declaration,
 		if err != nil {
 			return nil, err
 		}
-		return []Declaration{decl}, nil
+		return []types.Declaration{decl}, nil
 	}
 	group, err := oneDecl(src, tf, groupedKind, names, node.Pos(), node.End(), node.Doc)
 	if err != nil {
 		return nil, err
 	}
-	out := []Declaration{group}
+	out := []types.Declaration{group}
 	for _, spec := range node.Specs {
 		decl, err := specDecl(src, tf, specKind, spec)
 		if err != nil {
@@ -233,10 +199,10 @@ func declarationKinds(tok token.Token) (specKind, groupedKind string, ok bool) {
 	}
 }
 
-func specDecl(src []byte, tf *token.File, kind string, spec ast.Spec) (Declaration, error) {
+func specDecl(src []byte, tf *token.File, kind string, spec ast.Spec) (types.Declaration, error) {
 	names, err := namesOfSpec(spec)
 	if err != nil {
-		return Declaration{}, err
+		return types.Declaration{}, err
 	}
 	switch s := spec.(type) {
 	case *ast.ValueSpec:
@@ -244,17 +210,17 @@ func specDecl(src []byte, tf *token.File, kind string, spec ast.Spec) (Declarati
 	case *ast.TypeSpec:
 		return oneDecl(src, tf, kind, names, s.Pos(), s.End(), s.Doc)
 	default:
-		return Declaration{}, &Error{Diagnostics: []Diagnostic{{Msg: "declaration spec is not a value or type spec"}}}
+		return types.Declaration{}, &Error{Diagnostics: []types.Diagnostic{{Msg: "declaration spec is not a value or type spec"}}}
 	}
 }
 
-func fieldDecl(src []byte, tf *token.File, node *ast.Field) (Declaration, error) {
+func fieldDecl(src []byte, tf *token.File, node *ast.Field) (types.Declaration, error) {
 	if node == nil {
-		return Declaration{}, &Error{Diagnostics: []Diagnostic{{Msg: "field is missing"}}}
+		return types.Declaration{}, &Error{Diagnostics: []types.Diagnostic{{Msg: "field is missing"}}}
 	}
 	names, err := identNames(node.Names)
 	if err != nil {
-		return Declaration{}, err
+		return types.Declaration{}, err
 	}
 	return oneDecl(src, tf, KindField, names, node.Pos(), node.End(), node.Doc)
 }
@@ -290,16 +256,16 @@ func namesOfSpec(spec ast.Spec) ([]string, error) {
 	switch s := spec.(type) {
 	case *ast.ValueSpec:
 		if len(s.Names) == 0 {
-			return nil, &Error{Diagnostics: []Diagnostic{{Msg: "value declaration has no names"}}}
+			return nil, &Error{Diagnostics: []types.Diagnostic{{Msg: "value declaration has no names"}}}
 		}
 		return identNames(s.Names)
 	case *ast.TypeSpec:
 		if s.Name == nil || s.Name.Name == "" {
-			return nil, &Error{Diagnostics: []Diagnostic{{Msg: "type declaration has no name"}}}
+			return nil, &Error{Diagnostics: []types.Diagnostic{{Msg: "type declaration has no name"}}}
 		}
 		return []string{s.Name.Name}, nil
 	default:
-		return nil, &Error{Diagnostics: []Diagnostic{{Msg: "declaration spec is not a value or type spec"}}}
+		return nil, &Error{Diagnostics: []types.Diagnostic{{Msg: "declaration spec is not a value or type spec"}}}
 	}
 }
 
@@ -310,38 +276,38 @@ func identNames(list []*ast.Ident) ([]string, error) {
 	out := make([]string, len(list))
 	for i, id := range list {
 		if id == nil || id.Name == "" {
-			return nil, &Error{Diagnostics: []Diagnostic{{Msg: "declaration identifier is empty"}}}
+			return nil, &Error{Diagnostics: []types.Diagnostic{{Msg: "declaration identifier is empty"}}}
 		}
 		out[i] = id.Name
 	}
 	return out, nil
 }
 
-func oneDecl(src []byte, tf *token.File, kind string, names []string, pos, end token.Pos, doc *ast.CommentGroup) (Declaration, error) {
+func oneDecl(src []byte, tf *token.File, kind string, names []string, pos, end token.Pos, doc *ast.CommentGroup) (types.Declaration, error) {
 	start, finish, err := nodeRange(tf, pos, end)
 	if err != nil {
-		return Declaration{}, err
+		return types.Declaration{}, err
 	}
-	decl := Declaration{Kind: kind, Names: names, Start: start, End: finish}
+	decl := types.Declaration{Kind: kind, Names: names, Start: start, End: finish}
 	if err := attachDoc(src, tf, &decl, doc); err != nil {
-		return Declaration{}, err
+		return types.Declaration{}, err
 	}
 	return decl, nil
 }
 
-func nodeRange(tf *token.File, pos, end token.Pos) (Position, Position, error) {
+func nodeRange(tf *token.File, pos, end token.Pos) (types.Position, types.Position, error) {
 	if tf == nil || !pos.IsValid() || !end.IsValid() {
-		return Position{}, Position{}, &Error{Diagnostics: []Diagnostic{{Msg: "declaration position is invalid"}}}
+		return types.Position{}, types.Position{}, &Error{Diagnostics: []types.Diagnostic{{Msg: "declaration position is invalid"}}}
 	}
 	startOff := tf.Offset(pos)
 	endOff := tf.Offset(end)
 	if startOff < 0 || endOff < startOff || endOff > tf.Size() {
-		return Position{}, Position{}, &Error{Diagnostics: []Diagnostic{{Msg: "declaration range is outside the source"}}}
+		return types.Position{}, types.Position{}, &Error{Diagnostics: []types.Diagnostic{{Msg: "declaration range is outside the source"}}}
 	}
 	return positionAt(tf, startOff), positionAt(tf, endOff), nil
 }
 
-func attachDoc(src []byte, tf *token.File, decl *Declaration, group *ast.CommentGroup) error {
+func attachDoc(src []byte, tf *token.File, decl *types.Declaration, group *ast.CommentGroup) error {
 	if group == nil {
 		return nil
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/edalca/nodex/internal/index"
+	"github.com/edalca/nodex/internal/project"
 )
 
 // status reports whether the generated index is missing, current, stale,
@@ -13,12 +14,12 @@ import (
 // Those four results are successful inspections. An error is returned only
 // when the project cannot be read far enough to decide. status does not
 // create or modify the index.
-func status(dir string) (string, error) {
-	state, err := openProjectState(dir)
+func status(dirs project.Locations) (string, error) {
+	state, err := openProjectState(dirs)
 	if err != nil {
 		return "", err
 	}
-	_, snap, err := index.Load(state.root)
+	_, snap, err := index.Load(state.workspace)
 	if err != nil {
 		if errors.Is(err, index.ErrAbsent) {
 			return "index: missing\n", nil

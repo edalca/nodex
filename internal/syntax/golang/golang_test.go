@@ -15,6 +15,9 @@ import (
 	"testing"
 
 	"github.com/edalca/nodex/internal/syntax/golang"
+
+	"github.com/edalca/nodex/internal/syntax/contracts"
+	"github.com/edalca/nodex/internal/syntax/types"
 )
 
 func TestOneGroupIsOneUnit(t *testing.T) {
@@ -228,7 +231,7 @@ func TestConcurrentParse(t *testing.T) {
 				if comments != nil || err == nil || err.Error() != want {
 					errCh <- errors.New("failure mismatch")
 				}
-			case []golang.Comment:
+			case []types.Comment:
 				if !reflect.DeepEqual(comments, want) {
 					errCh <- errors.New("comment mismatch")
 				}
@@ -276,7 +279,7 @@ func TestImplementationImports(t *testing.T) {
 				sawParser = true
 			}
 			for _, bad := range forbidden {
-				if path == bad || strings.HasPrefix(path, bad+"/") {
+				if path == bad || (bad != "github.com/edalca/nodex/internal/syntax" && strings.HasPrefix(path, bad+"/")) {
 					t.Errorf("%s imports %s", name, path)
 				}
 			}
@@ -326,21 +329,21 @@ func TestContextUsesParsedDeclarations(t *testing.T) {
 func TestContextRejectsBadInput(t *testing.T) {
 	src := "package p\n\n// only\nfunc F() {}\n"
 	comments := mustComments(t, src)
-	_, err := golang.Context([]byte("package p\nfunc (\n"), golang.Position{Offset: 0, Line: 1, Column: 1}, golang.Position{Offset: len("package"), Line: 1, Column: 8}, golang.Limits{Lines: 40, ExtraBytes: 8192})
+	_, err := golang.Context([]byte("package p\nfunc (\n"), types.Position{Offset: 0, Line: 1, Column: 1}, types.Position{Offset: len("package"), Line: 1, Column: 8}, contracts.Limits{Lines: 40, ExtraBytes: 8192})
 	var parseErr *golang.Error
 	if !errors.As(err, &parseErr) {
 		t.Fatalf("malformed source error = %v", err)
 	}
 
-	_, err = golang.Context([]byte(src), golang.Position{Offset: 0, Line: 1, Column: 1}, golang.Position{Offset: len("package"), Line: 1, Column: 8}, golang.Limits{Lines: 40, ExtraBytes: 8192})
-	if !errors.Is(err, golang.ErrCommentNotFound) {
+	_, err = golang.Context([]byte(src), types.Position{Offset: 0, Line: 1, Column: 1}, types.Position{Offset: len("package"), Line: 1, Column: 8}, contracts.Limits{Lines: 40, ExtraBytes: 8192})
+	if !errors.Is(err, contracts.ErrCommentNotFound) {
 		t.Fatalf("keyword range error = %v", err)
 	}
 
 	bad := comments[0].Start
 	bad.Line = 99
-	_, err = golang.Context([]byte(src), bad, comments[0].End, golang.Limits{Lines: 40, ExtraBytes: 8192})
-	if !errors.Is(err, golang.ErrMalformedRange) {
+	_, err = golang.Context([]byte(src), bad, comments[0].End, contracts.Limits{Lines: 40, ExtraBytes: 8192})
+	if !errors.Is(err, contracts.ErrMalformedRange) {
 		t.Fatalf("inconsistent range error = %v", err)
 	}
 
@@ -358,7 +361,7 @@ func TestContextRejectsBadInput(t *testing.T) {
 func TestContextPhysicalPositionsAndOriginalBytes(t *testing.T) {
 	src := "package p\n\n//line foo.go:10:9\n\n// after\nvar x int\n"
 	comments := mustComments(t, src)
-	var after golang.Comment
+	var after types.Comment
 	for _, c := range comments {
 		if c.Text == "after" {
 			after = c
@@ -399,14 +402,14 @@ func TestContextHonorsCallerLimits(t *testing.T) {
 	b.WriteString("}\n")
 	src := b.String()
 	comments := mustComments(t, src)
-	var target golang.Comment
+	var target types.Comment
 	for _, c := range comments {
 		if c.Text == "TARGET" {
 			target = c
 		}
 	}
-	limited := mustGoContextLimits(t, src, target, golang.Limits{Lines: 5, ExtraBytes: 8192})
-	full := mustGoContextLimits(t, src, target, golang.Limits{Lines: 40, ExtraBytes: 8192})
+	limited := mustGoContextLimits(t, src, target, contracts.Limits{Lines: 5, ExtraBytes: 8192})
+	full := mustGoContextLimits(t, src, target, contracts.Limits{Lines: 40, ExtraBytes: 8192})
 	if strings.Contains(limited.Text, "func F()") || snippetLineCount(limited.Text) > 5 {
 		t.Fatalf("limited snippet = %q", limited.Text)
 	}
@@ -422,7 +425,7 @@ func TestContextHonorsCallerLimits(t *testing.T) {
 
 	long := "package p\n\nfunc F() { /* TARGET */ s := \"" + strings.Repeat("a", 400) + "\" }\n"
 	longComments := mustComments(t, long)
-	tight := mustGoContextLimits(t, long, longComments[0], golang.Limits{Lines: 40, ExtraBytes: 32})
+	tight := mustGoContextLimits(t, long, longComments[0], contracts.Limits{Lines: 40, ExtraBytes: 32})
 	extra := 0
 	if longComments[0].Start.Offset > tight.Start.Offset {
 		extra += longComments[0].Start.Offset - tight.Start.Offset
@@ -435,7 +438,7 @@ func TestContextHonorsCallerLimits(t *testing.T) {
 	}
 }
 
-func mustComments(t *testing.T, src string) []golang.Comment {
+func mustComments(t *testing.T, src string) []types.Comment {
 	t.Helper()
 	comments, err := golang.Parse([]byte(src))
 	if err != nil {
@@ -444,12 +447,12 @@ func mustComments(t *testing.T, src string) []golang.Comment {
 	return comments
 }
 
-func mustGoContext(t *testing.T, src string, comment golang.Comment) golang.Snippet {
+func mustGoContext(t *testing.T, src string, comment types.Comment) types.Snippet {
 	t.Helper()
-	return mustGoContextLimits(t, src, comment, golang.Limits{Lines: 40, ExtraBytes: 8192})
+	return mustGoContextLimits(t, src, comment, contracts.Limits{Lines: 40, ExtraBytes: 8192})
 }
 
-func mustGoContextLimits(t *testing.T, src string, comment golang.Comment, limits golang.Limits) golang.Snippet {
+func mustGoContextLimits(t *testing.T, src string, comment types.Comment, limits contracts.Limits) types.Snippet {
 	t.Helper()
 	snip, err := golang.Context([]byte(src), comment.Start, comment.End, limits)
 	if err != nil {
@@ -545,4 +548,74 @@ func mustParseFile(t *testing.T, src string) (*token.FileSet, *ast.File) {
 		t.Fatalf("parser: %v", err)
 	}
 	return fset, file
+}
+
+func TestNewSuppliesCompleteLanguageContract(t *testing.T) {
+	var implementation contracts.Language = golang.New()
+	if implementation.ID() != "go" || !implementation.Recognize("dir/a.go") || implementation.Recognize("a.GO") || implementation.Recognize("a.txt") {
+		t.Fatal("Go identity or recognition changed")
+	}
+	sources := []string{
+		"package p\n",
+		"// Package p.\r\npackage p\r\n\r\n// F docs.\r\nfunc  F( ){return}\r\n",
+		"package p\n\n//line other.go:400:1\n//go:generate tool\nfunc F() {} // trail\n",
+		"package p\n\n// Group\nconst (\n// A\nA = 1\nB = 2\n)\n\ntype T struct {\n// Named\nNamed int\nU\n}\n",
+		"package p\n\nfunc F() {\n// inside\n" + strings.Repeat("_ = 1\n", 100) + "}\n",
+	}
+	limits := contracts.Limits{Lines: 40, ExtraBytes: 8192}
+	for _, source := range sources {
+		body := []byte(source)
+		comments, declarations, err := golang.ParseFile(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		doc, err := implementation.Parse(body)
+		if err != nil || doc == nil || !reflect.DeepEqual(doc.Comments, comments) || !reflect.DeepEqual(doc.Declarations, declarations) {
+			t.Fatalf("contract parse differs from parser facts: %+v, %v", doc, err)
+		}
+		for _, comment := range comments {
+			want, err := golang.Context(body, comment.Start, comment.End, limits)
+			got, gotErr := implementation.Context(body, types.Range{Start: comment.Start, End: comment.End}, limits)
+			if err != nil || gotErr != nil || got != want {
+				t.Fatalf("contract comment context = %+v, %v; parser = %+v, %v", got, gotErr, want, err)
+			}
+		}
+		for _, declaration := range declarations {
+			want, err := golang.DeclarationContext(body, declaration.Start, declaration.End, limits)
+			got, gotErr := implementation.DeclarationContext(body, types.Range{Start: declaration.Start, End: declaration.End}, limits)
+			if err != nil || gotErr != nil || got != want {
+				t.Fatalf("contract declaration context = %+v, %v; parser = %+v, %v", got, gotErr, want, err)
+			}
+		}
+	}
+	for _, source := range [][]byte{nil, []byte("package p\n//line other.go:400:1\nfunc (\n")} {
+		doc, err := implementation.Parse(source)
+		var failure *contracts.ParseError
+		if doc != nil || !errors.As(err, &failure) || len(failure.Diagnostics) == 0 {
+			t.Fatalf("contract malformed parse = %v, %v", doc, err)
+		}
+		_, parserErr := golang.Parse(source)
+		var parserFailure *golang.Error
+		if !errors.As(parserErr, &parserFailure) || !reflect.DeepEqual(failure.Diagnostics, parserFailure.Diagnostics) {
+			t.Fatalf("contract diagnostics differ: %v / %v", failure, parserErr)
+		}
+	}
+	catalog := implementation.Presets()
+	if !reflect.DeepEqual(catalog.Concrete, golang.ConcretePresets()) ||
+		!reflect.DeepEqual(catalog.Aggregates, []contracts.Aggregate{{ID: "go:all", Presets: golang.ConcretePresets()}}) {
+		t.Fatalf("contract preset catalog = %+v", catalog)
+	}
+	catalog.Concrete[0] = "changed"
+	catalog.Aggregates[0].Presets[0] = "changed"
+	if next := implementation.Presets(); !reflect.DeepEqual(next.Concrete, golang.ConcretePresets()) || !reflect.DeepEqual(next.Aggregates[0].Presets, next.Concrete) {
+		t.Fatal("contract catalog is not a fresh result")
+	}
+	generated := []byte("// Code generated by tool. DO NOT EDIT.\n\npackage p\n")
+	for _, path := range []string{"a.go", "a_test.go", "vendor/a.go", "pkg/vendor/a.go", "vendorized/a.go", "a.GO", "a.txt"} {
+		for _, enabled := range [][]string{nil, {"go:tests"}, {"go:vendor"}, {"go:generated"}, golang.ConcretePresets()} {
+			if implementation.PathExcluded(path, enabled) != golang.PathExcluded(path, enabled) || implementation.SourceExcluded(path, generated, enabled) != golang.SourceExcluded(path, generated, enabled) {
+				t.Fatalf("contract preset behavior differs for %s, %q", path, enabled)
+			}
+		}
+	}
 }

@@ -1,44 +1,13 @@
 package golang
 
 import (
-	"errors"
 	"go/ast"
 	"go/token"
 	"unicode/utf8"
+
+	"github.com/edalca/nodex/internal/syntax/contracts"
+	"github.com/edalca/nodex/internal/syntax/types"
 )
-
-var (
-	// ErrMalformedRange means the supplied range is not a coherent physical
-	// range of the source bytes.
-	ErrMalformedRange = errors.New("comment range is malformed")
-
-	// ErrCommentNotFound means the range is not exactly one comment group.
-	ErrCommentNotFound = errors.New("comment range does not match a comment")
-
-	// ErrAmbiguousComment means the range matches more than one comment group.
-	ErrAmbiguousComment = errors.New("comment range matches more than one comment")
-)
-
-// Limits bound a structural context snippet.
-//
-// Lines is the maximum number of physical source lines. ExtraBytes is the
-// maximum number of source bytes placed outside the comment. The comment's
-// own bytes are not counted against ExtraBytes. A non-positive Lines value
-// is treated as one line. A negative ExtraBytes value is treated as zero.
-type Limits struct {
-	Lines      int
-	ExtraBytes int
-}
-
-// Snippet is a physical slice of the source passed to Context.
-//
-// Text is src[Start.Offset:End.Offset]. Start and End use physical
-// coordinates, with //line adjustment disabled.
-type Snippet struct {
-	Start Position
-	End   Position
-	Text  string
-}
 
 // Context returns the bounded structural source around the comment at
 // [start, end).
@@ -74,54 +43,54 @@ type Snippet struct {
 // keeps its starting line and the following lines that fit; the snippet
 // still contains the comment's starting byte. The slice is copied from src
 // and contains no inserted ellipsis.
-func Context(src []byte, start, end Position, limits Limits) (Snippet, error) {
+func Context(src []byte, start, end types.Position, limits contracts.Limits) (types.Snippet, error) {
 	if src == nil {
 		src = []byte{}
 	}
 	if err := rangeShape(src, start, end); err != nil {
-		return Snippet{}, err
+		return types.Snippet{}, err
 	}
 	src, tf, file, err := parseSource(src)
 	if err != nil {
-		return Snippet{}, err
+		return types.Snippet{}, err
 	}
 	if positionAt(tf, start.Offset) != start || positionAt(tf, end.Offset) != end {
-		return Snippet{}, ErrMalformedRange
+		return types.Snippet{}, contracts.ErrMalformedRange
 	}
 	group, err := matchGroup(src, tf, file, start, end)
 	if err != nil {
-		return Snippet{}, err
+		return types.Snippet{}, err
 	}
 	comment, err := commentFromGroup(src, tf, group)
 	if err != nil {
-		return Snippet{}, err
+		return types.Snippet{}, err
 	}
 	container := containerOf(src, tf, file, group, comment.Start.Offset, comment.End.Offset)
 	from, to := boundSnippet(src, tf, container, byteSpan{comment.Start.Offset, comment.End.Offset}, normalizeLimits(limits))
 	if from < 0 || to > len(src) || from > to {
-		return Snippet{}, ErrMalformedRange
+		return types.Snippet{}, contracts.ErrMalformedRange
 	}
-	return Snippet{
+	return types.Snippet{
 		Start: positionAt(tf, from),
 		End:   positionAt(tf, to),
 		Text:  string(src[from:to]),
 	}, nil
 }
 
-func rangeShape(src []byte, start, end Position) error {
+func rangeShape(src []byte, start, end types.Position) error {
 	if start.Offset < 0 || end.Offset < 0 || end.Offset < start.Offset {
-		return ErrMalformedRange
+		return contracts.ErrMalformedRange
 	}
 	if start.Line < 1 || end.Line < 1 || start.Column < 1 || end.Column < 1 {
-		return ErrMalformedRange
+		return contracts.ErrMalformedRange
 	}
 	if start.Offset > len(src) || end.Offset > len(src) {
-		return ErrMalformedRange
+		return contracts.ErrMalformedRange
 	}
 	return nil
 }
 
-func matchGroup(src []byte, tf *token.File, file *ast.File, start, end Position) (*ast.CommentGroup, error) {
+func matchGroup(src []byte, tf *token.File, file *ast.File, start, end types.Position) (*ast.CommentGroup, error) {
 	var matched []*ast.CommentGroup
 	for _, group := range file.Comments {
 		got, err := commentFromGroup(src, tf, group)
@@ -134,11 +103,11 @@ func matchGroup(src []byte, tf *token.File, file *ast.File, start, end Position)
 	}
 	switch len(matched) {
 	case 0:
-		return nil, ErrCommentNotFound
+		return nil, contracts.ErrCommentNotFound
 	case 1:
 		return matched[0], nil
 	default:
-		return nil, ErrAmbiguousComment
+		return nil, contracts.ErrAmbiguousComment
 	}
 }
 
@@ -342,7 +311,7 @@ type normalizedLimits struct {
 	extraBytes int
 }
 
-func normalizeLimits(limits Limits) normalizedLimits {
+func normalizeLimits(limits contracts.Limits) normalizedLimits {
 	lines := limits.Lines
 	if lines < 1 {
 		lines = 1

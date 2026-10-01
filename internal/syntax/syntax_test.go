@@ -1,4 +1,4 @@
-package syntax_test
+package syntax
 
 import (
 	"errors"
@@ -13,7 +13,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/edalca/nodex/internal/syntax"
+	"github.com/edalca/nodex/internal/syntax/contracts"
+	"github.com/edalca/nodex/internal/syntax/types"
 )
 
 func TestRecognize(t *testing.T) {
@@ -29,8 +30,8 @@ func TestRecognize(t *testing.T) {
 		".go",
 	}
 	for _, path := range supported {
-		lang, ok := syntax.Recognize(path)
-		if !ok || lang != syntax.Go {
+		lang, ok := Recognize(path)
+		if !ok || lang != Go {
 			t.Errorf("Recognize(%q) = (%q, %v), want go", path, lang, ok)
 		}
 	}
@@ -49,7 +50,7 @@ func TestRecognize(t *testing.T) {
 		"go",
 	}
 	for _, path := range unsupported {
-		lang, ok := syntax.Recognize(path)
+		lang, ok := Recognize(path)
 		if ok || lang != "" {
 			t.Errorf("Recognize(%q) = (%q, %v), want unsupported", path, lang, ok)
 		}
@@ -67,11 +68,11 @@ func TestGoNamesStaySupported(t *testing.T) {
 		"vendor/foo_linux_test.go",
 	}
 	for _, path := range paths {
-		doc, err := syntax.Parse(path, src)
+		doc, err := Parse(path, src)
 		if err != nil || doc == nil {
 			t.Fatalf("Parse(%q): %v", path, err)
 		}
-		if doc.Language != syntax.Go || doc.Path != path {
+		if doc.Language != Go || doc.Path != path {
 			t.Fatalf("Parse(%q) = language %q path %q", path, doc.Language, doc.Path)
 		}
 	}
@@ -85,15 +86,15 @@ func TestUnsupportedPathIgnoresContents(t *testing.T) {
 	}
 	for _, src := range samples {
 		for _, path := range []string{"foo.rs", "foo.py", "README.md", "foo.GO"} {
-			doc, err := syntax.Parse(path, []byte(src))
+			doc, err := Parse(path, []byte(src))
 			if doc != nil {
 				t.Fatalf("Parse(%q) returned a document", path)
 			}
-			var unsupported *syntax.UnsupportedError
+			var unsupported *UnsupportedError
 			if !errors.As(err, &unsupported) || unsupported.Path != path {
 				t.Fatalf("Parse(%q) error = %v, want UnsupportedError for that path", path, err)
 			}
-			var parseErr *syntax.ParseError
+			var parseErr *ParseError
 			if errors.As(err, &parseErr) {
 				t.Fatalf("Parse(%q) error = %v, want the path rejected before parsing", path, err)
 			}
@@ -102,7 +103,7 @@ func TestUnsupportedPathIgnoresContents(t *testing.T) {
 }
 
 func TestParseUsesCallerBytes(t *testing.T) {
-	doc, err := syntax.Parse("no/such/dir/file.go", []byte("package p\n"))
+	doc, err := Parse("no/such/dir/file.go", []byte("package p\n"))
 	if err != nil || doc == nil {
 		t.Fatalf("Parse of absent path with bytes: %v", err)
 	}
@@ -112,20 +113,20 @@ func TestParseUsesCallerBytes(t *testing.T) {
 }
 
 func TestNilSource(t *testing.T) {
-	doc, err := syntax.Parse("empty.go", nil)
+	doc, err := Parse("empty.go", nil)
 	if doc != nil {
 		t.Fatal("nil source returned a document")
 	}
-	var parseErr *syntax.ParseError
+	var parseErr *ParseError
 	if !errors.As(err, &parseErr) || parseErr.Path != "empty.go" {
 		t.Fatalf("nil source error = %v", err)
 	}
 
-	doc, err = syntax.Parse("empty.rs", nil)
+	doc, err = Parse("empty.rs", nil)
 	if doc != nil {
 		t.Fatal("unsupported nil source returned a document")
 	}
-	var unsupported *syntax.UnsupportedError
+	var unsupported *UnsupportedError
 	if !errors.As(err, &unsupported) || unsupported.Path != "empty.rs" {
 		t.Fatalf("unsupported nil source error = %v", err)
 	}
@@ -133,7 +134,7 @@ func TestNilSource(t *testing.T) {
 
 func TestStringIsNotAComment(t *testing.T) {
 	src := "package sample\n\nvar s = \"// not a comment\"\n\n// real comment\nfunc F() {}\n"
-	doc, err := syntax.Parse("sample.go", []byte(src))
+	doc, err := Parse("sample.go", []byte(src))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -155,7 +156,7 @@ func TestStringIsNotAComment(t *testing.T) {
 
 func TestNormalizedTextKeepsGenerateDirective(t *testing.T) {
 	src := "package p\n\n//go:generate stringer -type Op\nfunc F() {}\n"
-	doc, err := syntax.Parse("gen.go", []byte(src))
+	doc, err := Parse("gen.go", []byte(src))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -172,7 +173,7 @@ func TestNormalizedTextKeepsGenerateDirective(t *testing.T) {
 
 func TestLineDirectiveKeepsPhysicalPositions(t *testing.T) {
 	src := "package p\n\n//line foo.go:10:9\n\n// after\nvar x int\n"
-	doc, err := syntax.Parse("real.go", []byte(src))
+	doc, err := Parse("real.go", []byte(src))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -194,11 +195,11 @@ func TestLineDirectiveKeepsPhysicalPositions(t *testing.T) {
 
 func TestSyntaxErrorReturnsNoDocument(t *testing.T) {
 	src := "package p\n\n// kept\nfunc (\n"
-	doc, err := syntax.Parse("bad.go", []byte(src))
+	doc, err := Parse("bad.go", []byte(src))
 	if doc != nil {
 		t.Fatalf("document = %+v", doc)
 	}
-	var parseErr *syntax.ParseError
+	var parseErr *ParseError
 	if !errors.As(err, &parseErr) || parseErr.Path != "bad.go" {
 		t.Fatalf("error = %v", err)
 	}
@@ -209,11 +210,11 @@ func TestSyntaxErrorReturnsNoDocument(t *testing.T) {
 
 func TestLineDirectiveSyntaxErrorStaysPhysical(t *testing.T) {
 	src := "package p\n\n//line other.go:400:1\nfunc (\n"
-	doc, err := syntax.Parse("bad.go", []byte(src))
+	doc, err := Parse("bad.go", []byte(src))
 	if doc != nil {
 		t.Fatalf("document = %+v", doc)
 	}
-	var parseErr *syntax.ParseError
+	var parseErr *ParseError
 	if !errors.As(err, &parseErr) || parseErr.Path != "bad.go" {
 		t.Fatalf("error = %v", err)
 	}
@@ -228,7 +229,7 @@ func TestLineDirectiveSyntaxErrorStaysPhysical(t *testing.T) {
 
 func TestColumnCountsBytes(t *testing.T) {
 	src := "package p\n\nvar µ = 1 // c\n"
-	doc, err := syntax.Parse("wide.go", []byte(src))
+	doc, err := Parse("wide.go", []byte(src))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -437,11 +438,11 @@ func TestParseComments(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			doc, err := syntax.Parse("sample.go", []byte(tt.src))
+			doc, err := Parse("sample.go", []byte(tt.src))
 			if err != nil {
 				t.Fatalf("Parse: %v", err)
 			}
-			if doc.Path != "sample.go" || doc.Language != syntax.Go {
+			if doc.Path != "sample.go" || doc.Language != Go {
 				t.Fatalf("document path %q language %q", doc.Path, doc.Language)
 			}
 			if doc.Comments == nil {
@@ -454,12 +455,12 @@ func TestParseComments(t *testing.T) {
 
 func TestRepeatedParseIsDeterministic(t *testing.T) {
 	src := []byte("package p\n\n// one\n// two\n\n/* three */\nfunc F() {}\n")
-	first, err := syntax.Parse("sample.go", src)
+	first, err := Parse("sample.go", src)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	for i := 0; i < 8; i++ {
-		again, err := syntax.Parse("sample.go", src)
+		again, err := Parse("sample.go", src)
 		if err != nil {
 			t.Fatalf("Parse %d: %v", i, err)
 		}
@@ -483,7 +484,7 @@ func TestConcurrentParse(t *testing.T) {
 	}
 	golden := make([]any, len(jobs))
 	for i, job := range jobs {
-		doc, err := syntax.Parse(job.path, []byte(job.src))
+		doc, err := Parse(job.path, []byte(job.src))
 		golden[i] = doc
 		if job.fail {
 			golden[i] = err.Error()
@@ -502,7 +503,7 @@ func TestConcurrentParse(t *testing.T) {
 		go func(n int) {
 			defer wg.Done()
 			job := jobs[n%len(jobs)]
-			doc, err := syntax.Parse(job.path, []byte(job.src))
+			doc, err := Parse(job.path, []byte(job.src))
 			if job.fail {
 				if doc != nil || err == nil || err.Error() != golden[n%len(jobs)] {
 					errCh <- errors.New(job.path)
@@ -576,7 +577,7 @@ type wantComment struct {
 	text string
 }
 
-func assertComments(t *testing.T, src string, got []syntax.Comment, want []wantComment) {
+func assertComments(t *testing.T, src string, got []Comment, want []wantComment) {
 	t.Helper()
 	if len(got) != len(want) {
 		t.Fatalf("comments = %d, want %d\n%#v", len(got), len(want), got)
@@ -610,7 +611,7 @@ func assertComments(t *testing.T, src string, got []syntax.Comment, want []wantC
 	}
 }
 
-func assertPosition(t *testing.T, src string, pos syntax.Position) {
+func assertPosition(t *testing.T, src string, pos Position) {
 	t.Helper()
 	if pos.Offset < 0 || pos.Offset > len(src) {
 		t.Fatalf("offset %d outside source length %d", pos.Offset, len(src))
@@ -794,7 +795,7 @@ func TestContextUnassociatedNeighborhood(t *testing.T) {
 	if strings.Contains(snip.Text, "_ = 79") || snip.Text == src {
 		t.Fatalf("neighborhood is not bounded: %q", snip.Text)
 	}
-	if n := snippetLines(snip.Text); n > syntax.MaxContextLines {
+	if n := snippetLines(snip.Text); n > MaxContextLines {
 		t.Fatalf("neighborhood lines = %d", n)
 	}
 }
@@ -822,10 +823,10 @@ func TestContextBoundsLargeFunction(t *testing.T) {
 	if !strings.Contains(snip.Text, "// TARGET") {
 		t.Fatalf("snippet = %q", snip.Text)
 	}
-	if n := snippetLines(snip.Text); n != syntax.MaxContextLines {
-		t.Fatalf("lines = %d, want %d\n%s", n, syntax.MaxContextLines, snip.Text)
+	if n := snippetLines(snip.Text); n != MaxContextLines {
+		t.Fatalf("lines = %d, want %d\n%s", n, MaxContextLines, snip.Text)
 	}
-	if extraOutside(snip, comment) > syntax.MaxContextExtraBytes {
+	if extraOutside(snip, comment) > MaxContextExtraBytes {
 		t.Fatalf("extra bytes = %d", extraOutside(snip, comment))
 	}
 }
@@ -843,13 +844,13 @@ func TestContextBoundsLongLine(t *testing.T) {
 	if strings.HasSuffix(snip.Text, "}") || strings.Contains(snip.Text, strings.Repeat("a", 10000)) {
 		t.Fatal("snippet kept the pathological line")
 	}
-	if extra := extraOutside(snip, comment); extra > syntax.MaxContextExtraBytes {
+	if extra := extraOutside(snip, comment); extra > MaxContextExtraBytes {
 		t.Fatalf("extra bytes = %d", extra)
 	}
 	if snippetLines(snip.Text) != 1 {
 		t.Fatalf("lines = %d", snippetLines(snip.Text))
 	}
-	again, err := syntax.Context("long.go", []byte(src), comment.Range)
+	again, err := Context("long.go", []byte(src), comment.Range)
 	if err != nil || !reflect.DeepEqual(snip, again) {
 		t.Fatalf("repeat = %+v err %v", again, err)
 	}
@@ -865,7 +866,7 @@ func TestContextCapsCommentLongerThanTheLineLimit(t *testing.T) {
 	}
 	b.WriteString("*/\nfunc After() {}\n")
 	src := b.String()
-	doc, err := syntax.Parse("wide.go", []byte(src))
+	doc, err := Parse("wide.go", []byte(src))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -873,7 +874,7 @@ func TestContextCapsCommentLongerThanTheLineLimit(t *testing.T) {
 		t.Fatalf("comments = %#v", doc.Comments)
 	}
 	comment := doc.Comments[0]
-	snip, err := syntax.Context("wide.go", []byte(src), comment.Range)
+	snip, err := Context("wide.go", []byte(src), comment.Range)
 	if err != nil {
 		t.Fatalf("Context: %v", err)
 	}
@@ -886,7 +887,7 @@ func TestContextCapsCommentLongerThanTheLineLimit(t *testing.T) {
 	if snip.Range.End.Offset >= comment.Range.End.Offset {
 		t.Fatal("snippet kept a comment longer than the line limit")
 	}
-	if n := snippetLines(snip.Text); n > syntax.MaxContextLines {
+	if n := snippetLines(snip.Text); n > MaxContextLines {
 		t.Fatalf("lines = %d", n)
 	}
 	if strings.Contains(snip.Text, "func After") || strings.Contains(snip.Text, "line 59") {
@@ -907,21 +908,21 @@ func TestContextExactRangeMatching(t *testing.T) {
 
 	shifted := comment.Range
 	shifted.End = physicalPosition(src, comment.Range.End.Offset+1)
-	_, err := syntax.Context("sample.go", []byte(src), shifted)
-	if !errors.Is(err, syntax.ErrCommentNotFound) {
+	_, err := Context("sample.go", []byte(src), shifted)
+	if !errors.Is(err, ErrCommentNotFound) {
 		t.Fatalf("shifted range error = %v", err)
 	}
-	var parseErr *syntax.ParseError
+	var parseErr *ParseError
 	if errors.As(err, &parseErr) {
 		t.Fatalf("missing comment reported as a parse error: %v", err)
 	}
 
-	keyword := syntax.Range{
+	keyword := Range{
 		Start: physicalPosition(src, 0),
 		End:   physicalPosition(src, len("package")),
 	}
-	_, err = syntax.Context("sample.go", []byte(src), keyword)
-	if !errors.Is(err, syntax.ErrCommentNotFound) {
+	_, err = Context("sample.go", []byte(src), keyword)
+	if !errors.Is(err, ErrCommentNotFound) {
 		t.Fatalf("keyword range error = %v", err)
 	}
 }
@@ -929,17 +930,17 @@ func TestContextExactRangeMatching(t *testing.T) {
 func TestContextMalformedRange(t *testing.T) {
 	src := "package p\n\n// only\nfunc F() {}\n"
 	comment := commentByRaw(t, src, "sample.go", "// only")
-	cases := []syntax.Range{
-		{Start: syntax.Position{Offset: 4, Line: 1, Column: 5}, End: syntax.Position{Offset: 1, Line: 1, Column: 2}},
-		{Start: syntax.Position{Offset: -1, Line: 1, Column: 1}, End: comment.Range.End},
-		{Start: syntax.Position{Offset: 0, Line: 0, Column: 1}, End: syntax.Position{Offset: 1, Line: 1, Column: 2}},
-		{Start: syntax.Position{Offset: 0, Line: 1, Column: 0}, End: syntax.Position{Offset: 1, Line: 1, Column: 2}},
-		{Start: syntax.Position{Offset: 0, Line: 1, Column: 1}, End: syntax.Position{Offset: len(src) + 4, Line: 1, Column: 2}},
-		{Start: syntax.Position{Offset: comment.Range.Start.Offset, Line: 99, Column: comment.Range.Start.Column}, End: comment.Range.End},
+	cases := []Range{
+		{Start: Position{Offset: 4, Line: 1, Column: 5}, End: Position{Offset: 1, Line: 1, Column: 2}},
+		{Start: Position{Offset: -1, Line: 1, Column: 1}, End: comment.Range.End},
+		{Start: Position{Offset: 0, Line: 0, Column: 1}, End: Position{Offset: 1, Line: 1, Column: 2}},
+		{Start: Position{Offset: 0, Line: 1, Column: 0}, End: Position{Offset: 1, Line: 1, Column: 2}},
+		{Start: Position{Offset: 0, Line: 1, Column: 1}, End: Position{Offset: len(src) + 4, Line: 1, Column: 2}},
+		{Start: Position{Offset: comment.Range.Start.Offset, Line: 99, Column: comment.Range.Start.Column}, End: comment.Range.End},
 	}
 	for _, r := range cases {
-		snip, err := syntax.Context("sample.go", []byte(src), r)
-		if snip.Text != "" || !errors.Is(err, syntax.ErrMalformedRange) {
+		snip, err := Context("sample.go", []byte(src), r)
+		if snip.Text != "" || !errors.Is(err, ErrMalformedRange) {
 			t.Fatalf("range %+v -> (%q, %v)", r, snip.Text, err)
 		}
 	}
@@ -949,34 +950,34 @@ func TestContextUnsupportedAndMalformedSource(t *testing.T) {
 	src := []byte("package p\n\n// only\nfunc F() {}\n")
 	comment := commentByRaw(t, string(src), "sample.go", "// only")
 	for _, path := range []string{"notes.rs", "README.md", "foo.GO"} {
-		snip, err := syntax.Context(path, src, comment.Range)
+		snip, err := Context(path, src, comment.Range)
 		if snip.Text != "" {
 			t.Fatalf("Context(%q) returned %q", path, snip.Text)
 		}
-		var unsupported *syntax.UnsupportedError
+		var unsupported *UnsupportedError
 		if !errors.As(err, &unsupported) || unsupported.Path != path {
 			t.Fatalf("Context(%q) error = %v", path, err)
 		}
-		var parseErr *syntax.ParseError
+		var parseErr *ParseError
 		if errors.As(err, &parseErr) {
 			t.Fatalf("Context(%q) parsed an unsupported path: %v", path, err)
 		}
 	}
 
 	bad := []byte("package p\n\n// kept\nfunc (\n")
-	r := syntax.Range{
+	r := Range{
 		Start: physicalPosition(string(bad), 0),
 		End:   physicalPosition(string(bad), len("package")),
 	}
-	snip, err := syntax.Context("bad.go", bad, r)
+	snip, err := Context("bad.go", bad, r)
 	if snip.Text != "" {
 		t.Fatalf("malformed source returned %q", snip.Text)
 	}
-	var parseErr *syntax.ParseError
+	var parseErr *ParseError
 	if !errors.As(err, &parseErr) || parseErr.Path != "bad.go" {
 		t.Fatalf("malformed source error = %v", err)
 	}
-	if errors.Is(err, syntax.ErrCommentNotFound) {
+	if errors.Is(err, ErrCommentNotFound) {
 		t.Fatal("malformed source was treated as a missing comment")
 	}
 }
@@ -1029,13 +1030,13 @@ func TestContextPreservesOriginalBytes(t *testing.T) {
 	}
 }
 
-func commentByRaw(t *testing.T, src, path, raw string) syntax.Comment {
+func commentByRaw(t *testing.T, src, path, raw string) Comment {
 	t.Helper()
-	doc, err := syntax.Parse(path, []byte(src))
+	doc, err := Parse(path, []byte(src))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	var found []syntax.Comment
+	var found []Comment
 	for _, c := range doc.Comments {
 		if c.Raw == raw {
 			found = append(found, c)
@@ -1047,9 +1048,9 @@ func commentByRaw(t *testing.T, src, path, raw string) syntax.Comment {
 	return found[0]
 }
 
-func mustSnippet(t *testing.T, path string, src []byte, comment syntax.Comment) syntax.Snippet {
+func mustSnippet(t *testing.T, path string, src []byte, comment Comment) Snippet {
 	t.Helper()
-	snip, err := syntax.Context(path, src, comment.Range)
+	snip, err := Context(path, src, comment.Range)
 	if err != nil {
 		t.Fatalf("Context: %v", err)
 	}
@@ -1070,7 +1071,7 @@ func mustSnippet(t *testing.T, path string, src []byte, comment syntax.Comment) 
 // assertContextPosition checks a physical position. The position at the
 // end of a newline-terminated file stays on the last line, one column past
 // the newline, which is how the parser reports that offset.
-func assertContextPosition(t *testing.T, src string, pos syntax.Position) {
+func assertContextPosition(t *testing.T, src string, pos Position) {
 	t.Helper()
 	if pos.Offset == len(src) && len(src) > 0 && src[len(src)-1] == '\n' {
 		prev := pos
@@ -1088,18 +1089,18 @@ func assertContextPosition(t *testing.T, src string, pos syntax.Position) {
 func TestPresetCatalog(t *testing.T) {
 	wantSelectors := []string{"go:all", "go:generated", "go:tests", "go:vendor"}
 	wantConcrete := []string{"go:generated", "go:tests", "go:vendor"}
-	if !reflect.DeepEqual(syntax.Selectors(), wantSelectors) {
-		t.Fatalf("selectors = %q", syntax.Selectors())
+	if !reflect.DeepEqual(Selectors(), wantSelectors) {
+		t.Fatalf("selectors = %q", Selectors())
 	}
-	if !reflect.DeepEqual(syntax.ConcretePresets(), wantConcrete) {
-		t.Fatalf("concrete = %q", syntax.ConcretePresets())
+	if !reflect.DeepEqual(ConcretePresets(), wantConcrete) {
+		t.Fatalf("concrete = %q", ConcretePresets())
 	}
-	expanded, err := syntax.ExpandSelector("go:all")
+	expanded, err := ExpandSelector("go:all")
 	if err != nil {
 		t.Fatalf("expand: %v", err)
 	}
-	if !reflect.DeepEqual(expanded, syntax.ConcretePresets()) {
-		t.Fatalf("go:all = %q, catalog %q", expanded, syntax.ConcretePresets())
+	if !reflect.DeepEqual(expanded, ConcretePresets()) {
+		t.Fatalf("go:all = %q, catalog %q", expanded, ConcretePresets())
 	}
 	for _, id := range expanded {
 		if id == "go:all" {
@@ -1107,31 +1108,31 @@ func TestPresetCatalog(t *testing.T) {
 		}
 	}
 	expanded[0] = "mutated"
-	again, err := syntax.ExpandSelector("go:all")
+	again, err := ExpandSelector("go:all")
 	if err != nil || again[0] == "mutated" {
 		t.Fatalf("expansion aliased the catalog: %q %v", again, err)
 	}
 	for _, id := range wantConcrete {
-		got, err := syntax.ExpandSelector(id)
+		got, err := ExpandSelector(id)
 		if err != nil || !reflect.DeepEqual(got, []string{id}) {
 			t.Fatalf("Expand(%s) = %q %v", id, got, err)
 		}
 	}
 	for _, selector := range []string{"", "Go:tests", "go:all ", "not-a-preset"} {
-		if _, err := syntax.ExpandSelector(selector); err == nil {
+		if _, err := ExpandSelector(selector); err == nil {
 			t.Fatalf("Expand(%q) succeeded", selector)
 		}
 	}
-	if err := syntax.ValidatePresets(nil); err != nil {
+	if err := ValidatePresets(nil); err != nil {
 		t.Fatalf("empty validate: %v", err)
 	}
-	if err := syntax.ValidatePresets(append([]string{}, wantConcrete...)); err != nil {
+	if err := ValidatePresets(append([]string{}, wantConcrete...)); err != nil {
 		t.Fatalf("concrete validate: %v", err)
 	}
-	if err := syntax.ValidatePresets([]string{"go:all"}); err == nil {
+	if err := ValidatePresets([]string{"go:all"}); err == nil {
 		t.Fatal("persisted go:all was accepted")
 	}
-	if err := syntax.ValidatePresets([]string{"nope"}); err == nil {
+	if err := ValidatePresets([]string{"nope"}); err == nil {
 		t.Fatal("unknown preset was accepted")
 	}
 }
@@ -1144,43 +1145,43 @@ func TestPresetExclusion(t *testing.T) {
 	gen := []string{"go:generated"}
 	none := []string{}
 
-	if syntax.PathExcluded("a_test.go", none) || syntax.PathExcluded("vendor/a.go", none) || syntax.InspectExcluded("gen.go", generated, none) {
+	if PathExcluded("a_test.go", none) || PathExcluded("vendor/a.go", none) || InspectExcluded("gen.go", generated, none) {
 		t.Fatal("disabled presets excluded a file")
 	}
-	if !syntax.PathExcluded("a_test.go", tests) || !syntax.PathExcluded("dir/a_test.go", tests) {
+	if !PathExcluded("a_test.go", tests) || !PathExcluded("dir/a_test.go", tests) {
 		t.Fatal("go:tests did not exclude _test.go")
 	}
-	if syntax.PathExcluded("a.go", tests) || syntax.PathExcluded("test.go", tests) || syntax.PathExcluded("a_TEST.go", tests) {
+	if PathExcluded("a.go", tests) || PathExcluded("test.go", tests) || PathExcluded("a_TEST.go", tests) {
 		t.Fatal("go:tests excluded a file that is not _test.go")
 	}
-	if !syntax.PathExcluded("vendor/a.go", vendor) || !syntax.PathExcluded("pkg/vendor/a.go", vendor) {
+	if !PathExcluded("vendor/a.go", vendor) || !PathExcluded("pkg/vendor/a.go", vendor) {
 		t.Fatal("go:vendor did not exclude a vendor element")
 	}
-	if syntax.PathExcluded("vendorized/a.go", vendor) || syntax.PathExcluded("pkg/myvendor/a.go", vendor) || syntax.PathExcluded("Vendor/a.go", vendor) {
+	if PathExcluded("vendorized/a.go", vendor) || PathExcluded("pkg/myvendor/a.go", vendor) || PathExcluded("Vendor/a.go", vendor) {
 		t.Fatal("go:vendor matched a non-exact element")
 	}
-	if syntax.PathExcluded("vendor/readme.md", vendor) || syntax.InspectExcluded("vendor/readme.md", []byte("generated"), vendor) {
+	if PathExcluded("vendor/readme.md", vendor) || InspectExcluded("vendor/readme.md", []byte("generated"), vendor) {
 		t.Fatal("a preset excluded an unsupported path")
 	}
-	if syntax.InspectExcluded("gen.go", generated, tests) {
+	if InspectExcluded("gen.go", generated, tests) {
 		t.Fatal("go:tests excluded a generated file by contents")
 	}
-	if !syntax.InspectExcluded("gen.go", generated, gen) {
+	if !InspectExcluded("gen.go", generated, gen) {
 		t.Fatal("canonical generated Go source was included")
 	}
-	if syntax.InspectExcluded("gen.go", generated, none) || syntax.InspectExcluded("noted.go", ordinary, gen) {
+	if InspectExcluded("gen.go", generated, none) || InspectExcluded("noted.go", ordinary, gen) {
 		t.Fatal("unrelated generated words excluded a file")
 	}
-	if syntax.InspectExcluded("zz_generated.go", ordinary, gen) {
+	if InspectExcluded("zz_generated.go", ordinary, gen) {
 		t.Fatal("a generated file name was treated as generated source")
 	}
 	broken := []byte("// Code generated by nodex-test. DO NOT EDIT.\n\npackage p\n\nfunc (\n")
-	if !syntax.InspectExcluded("gen.go", broken, gen) {
+	if !InspectExcluded("gen.go", broken, gen) {
 		t.Fatal("generated classification required a complete program")
 	}
 }
 
-func physicalPosition(src string, offset int) syntax.Position {
+func physicalPosition(src string, offset int) Position {
 	line, col := 1, 1
 	for i := 0; i < offset && i < len(src); i++ {
 		if src[i] == '\n' {
@@ -1190,7 +1191,7 @@ func physicalPosition(src string, offset int) syntax.Position {
 		}
 		col++
 	}
-	return syntax.Position{Offset: offset, Line: line, Column: col}
+	return Position{Offset: offset, Line: line, Column: col}
 }
 
 func snippetLines(text string) int {
@@ -1233,88 +1234,88 @@ func TestGoDeclarations(t *testing.T) {
 		t.Fatalf("comments = %d", len(doc.Comments))
 	}
 	want := []struct {
-		kind  syntax.Kind
+		kind  Kind
 		names []string
 		doc   string
 	}{
-		{syntax.KindPackage, []string{"sample"}, "Package sample documents sample."},
-		{syntax.KindFunction, []string{"F"}, "F documents F."},
-		{syntax.KindFunction, []string{"g"}, ""},
-		{syntax.KindConstGroup, []string{"A", "B"}, ""},
-		{syntax.KindConst, []string{"A"}, "A documents A."},
-		{syntax.KindConst, []string{"B"}, ""},
-		{syntax.KindTypeGroup, []string{"T"}, "TGroup documents the type group."},
-		{syntax.KindType, []string{"T"}, ""},
-		{syntax.KindField, []string{"Name"}, "Name documents Name."},
-		{syntax.KindField, []string{"Hidden"}, ""},
+		{KindPackage, []string{"sample"}, "Package sample documents sample."},
+		{KindFunction, []string{"F"}, "F documents F."},
+		{KindFunction, []string{"g"}, ""},
+		{KindConstGroup, []string{"A", "B"}, ""},
+		{KindConst, []string{"A"}, "A documents A."},
+		{KindConst, []string{"B"}, ""},
+		{KindTypeGroup, []string{"T"}, "TGroup documents the type group."},
+		{KindType, []string{"T"}, ""},
+		{KindField, []string{"Name"}, "Name documents Name."},
+		{KindField, []string{"Hidden"}, ""},
 	}
 	assertDecls(t, doc, want)
 
 	doc = mustParseDoc(t, "one.go", "package one\n\n// X documents X.\nconst X = 1\n")
 	assertDecls(t, doc, []struct {
-		kind  syntax.Kind
+		kind  Kind
 		names []string
 		doc   string
 	}{
-		{syntax.KindPackage, []string{"one"}, ""},
-		{syntax.KindConst, []string{"X"}, "X documents X."},
+		{KindPackage, []string{"one"}, ""},
+		{KindConst, []string{"X"}, "X documents X."},
 	})
 
 	doc = mustParseDoc(t, "vars.go", "package vars\n\nvar A, B int\n")
 	assertDecls(t, doc, []struct {
-		kind  syntax.Kind
+		kind  Kind
 		names []string
 		doc   string
 	}{
-		{syntax.KindPackage, []string{"vars"}, ""},
-		{syntax.KindVar, []string{"A", "B"}, ""},
+		{KindPackage, []string{"vars"}, ""},
+		{KindVar, []string{"A", "B"}, ""},
 	})
 
 	doc = mustParseDoc(t, "group.go", "package group\n\nvar (\n\tA, B int\n\t// C documents C.\n\tC = 1\n)\n")
 	assertDecls(t, doc, []struct {
-		kind  syntax.Kind
+		kind  Kind
 		names []string
 		doc   string
 	}{
-		{syntax.KindPackage, []string{"group"}, ""},
-		{syntax.KindVarGroup, []string{"A", "B", "C"}, ""},
-		{syntax.KindVar, []string{"A", "B"}, ""},
-		{syntax.KindVar, []string{"C"}, "C documents C."},
+		{KindPackage, []string{"group"}, ""},
+		{KindVarGroup, []string{"A", "B", "C"}, ""},
+		{KindVar, []string{"A", "B"}, ""},
+		{KindVar, []string{"C"}, "C documents C."},
 	})
 
 	doc = mustParseDoc(t, "method.go", "package method\n\ntype T struct{}\n\nfunc (T) M(a int) int { return a }\n")
 	assertDecls(t, doc, []struct {
-		kind  syntax.Kind
+		kind  Kind
 		names []string
 		doc   string
 	}{
-		{syntax.KindPackage, []string{"method"}, ""},
-		{syntax.KindType, []string{"T"}, ""},
-		{syntax.KindMethod, []string{"M"}, ""},
+		{KindPackage, []string{"method"}, ""},
+		{KindType, []string{"T"}, ""},
+		{KindMethod, []string{"M"}, ""},
 	})
 
 	doc = mustParseDoc(t, "iface.go", "package iface\n\ntype I interface {\n\tM(x int)\n\tU\n}\n")
 	assertDecls(t, doc, []struct {
-		kind  syntax.Kind
+		kind  Kind
 		names []string
 		doc   string
 	}{
-		{syntax.KindPackage, []string{"iface"}, ""},
-		{syntax.KindType, []string{"I"}, ""},
-		{syntax.KindField, []string{"M"}, ""},
-		{syntax.KindField, nil, ""},
+		{KindPackage, []string{"iface"}, ""},
+		{KindType, []string{"I"}, ""},
+		{KindField, []string{"M"}, ""},
+		{KindField, nil, ""},
 	})
 
 	doc = mustParseDoc(t, "embed.go", "package embed\n\ntype E struct {\n\tU\n\t*T\n}\n")
 	assertDecls(t, doc, []struct {
-		kind  syntax.Kind
+		kind  Kind
 		names []string
 		doc   string
 	}{
-		{syntax.KindPackage, []string{"embed"}, ""},
-		{syntax.KindType, []string{"E"}, ""},
-		{syntax.KindField, nil, ""},
-		{syntax.KindField, nil, ""},
+		{KindPackage, []string{"embed"}, ""},
+		{KindType, []string{"E"}, ""},
+		{KindField, nil, ""},
+		{KindField, nil, ""},
 	})
 	for _, decl := range doc.Declarations {
 		if decl.Names == nil {
@@ -1324,15 +1325,15 @@ func TestGoDeclarations(t *testing.T) {
 
 	doc = mustParseDoc(t, "local.go", "package local\n\nfunc F(a int) (b int) {\n\tconst local = 1\n\ttype localT struct{ E int }\n\treturn a + b\n}\n")
 	assertDecls(t, doc, []struct {
-		kind  syntax.Kind
+		kind  Kind
 		names []string
 		doc   string
 	}{
-		{syntax.KindPackage, []string{"local"}, ""},
-		{syntax.KindFunction, []string{"F"}, ""},
-		{syntax.KindConst, []string{"local"}, ""},
-		{syntax.KindType, []string{"localT"}, ""},
-		{syntax.KindField, []string{"E"}, ""},
+		{KindPackage, []string{"local"}, ""},
+		{KindFunction, []string{"F"}, ""},
+		{KindConst, []string{"local"}, ""},
+		{KindType, []string{"localT"}, ""},
+		{KindField, []string{"E"}, ""},
 	})
 
 	doc = mustParseDoc(t, "trail.go", "package trail\n\ntype T struct {\n\t// Name documents Name.\n\tName string // trailing\n\tHidden int // also trailing\n}\n")
@@ -1340,14 +1341,14 @@ func TestGoDeclarations(t *testing.T) {
 		t.Fatalf("trailing comments = %+v", doc.Comments)
 	}
 	assertDecls(t, doc, []struct {
-		kind  syntax.Kind
+		kind  Kind
 		names []string
 		doc   string
 	}{
-		{syntax.KindPackage, []string{"trail"}, ""},
-		{syntax.KindType, []string{"T"}, ""},
-		{syntax.KindField, []string{"Name"}, "Name documents Name."},
-		{syntax.KindField, []string{"Hidden"}, ""},
+		{KindPackage, []string{"trail"}, ""},
+		{KindType, []string{"T"}, ""},
+		{KindField, []string{"Name"}, "Name documents Name."},
+		{KindField, []string{"Hidden"}, ""},
 	})
 
 	doc = mustParseDoc(t, "imports.go", "package imports\n\nimport \"fmt\"\n\nimport (\n\t\"io\"\n\talias \"os\"\n)\n\nvar _ = fmt.Append\n")
@@ -1356,13 +1357,13 @@ func TestGoDeclarations(t *testing.T) {
 			t.Fatalf("import was indexed: %+v", decl)
 		}
 	}
-	if len(doc.Declarations) != 2 || doc.Declarations[0].Kind != syntax.KindPackage || doc.Declarations[1].Kind != syntax.KindVar {
+	if len(doc.Declarations) != 2 || doc.Declarations[0].Kind != KindPackage || doc.Declarations[1].Kind != KindVar {
 		t.Fatalf("imports.go declarations = %+v", doc.Declarations)
 	}
 
 	src := []byte(sample)
-	pkg := docByKind(t, mustParseDoc(t, "sample.go", sample), syntax.KindPackage, "sample")
-	snip, err := syntax.DeclarationContext("sample.go", src, pkg.Range)
+	pkg := docByKind(t, mustParseDoc(t, "sample.go", sample), KindPackage, "sample")
+	snip, err := DeclarationContext("sample.go", src, pkg.Range)
 	if err != nil {
 		t.Fatalf("package context: %v", err)
 	}
@@ -1383,47 +1384,47 @@ func TestGoDeclarations(t *testing.T) {
 	body.WriteString("}\n")
 	longSrc := []byte(body.String())
 	longDoc := mustParseDoc(t, "long.go", body.String())
-	fn := docByKind(t, longDoc, syntax.KindFunction, "F")
-	snip, err = syntax.DeclarationContext("long.go", longSrc, fn.Range)
+	fn := docByKind(t, longDoc, KindFunction, "F")
+	snip, err = DeclarationContext("long.go", longSrc, fn.Range)
 	if err != nil {
 		t.Fatalf("function context: %v", err)
 	}
 	if !strings.HasPrefix(snip.Text, "func F() {\n") || strings.Contains(snip.Text, "...") || strings.Contains(snip.Text, "_ = 79") {
 		t.Fatalf("function context = %q", snip.Text)
 	}
-	if snippetLines(snip.Text) > syntax.MaxContextLines {
+	if snippetLines(snip.Text) > MaxContextLines {
 		t.Fatalf("function context lines = %d", snippetLines(snip.Text))
 	}
 	if string(longSrc[snip.Range.Start.Offset:snip.Range.End.Offset]) != snip.Text {
 		t.Fatal("function context is not the original bytes")
 	}
 
-	if _, err := syntax.DeclarationContext("sample.go", src, syntax.Range{}); !errors.Is(err, syntax.ErrMalformedDeclaration) {
+	if _, err := DeclarationContext("sample.go", src, Range{}); !errors.Is(err, ErrMalformedDeclaration) {
 		t.Fatalf("malformed = %v", err)
 	}
-	missing := syntax.Range{
-		Start: syntax.Position{Offset: 0, Line: 1, Column: 1},
-		End:   syntax.Position{Offset: 1, Line: 1, Column: 2},
+	missing := Range{
+		Start: Position{Offset: 0, Line: 1, Column: 1},
+		End:   Position{Offset: 1, Line: 1, Column: 2},
 	}
-	if _, err := syntax.DeclarationContext("sample.go", src, missing); !errors.Is(err, syntax.ErrDeclarationNotFound) {
+	if _, err := DeclarationContext("sample.go", src, missing); !errors.Is(err, ErrDeclarationNotFound) {
 		t.Fatalf("missing = %v", err)
 	}
-	if _, err := syntax.Parse("bad.go", []byte("package {\n")); err == nil {
+	if _, err := Parse("bad.go", []byte("package {\n")); err == nil {
 		t.Fatal("malformed source returned a document")
 	}
 }
 
-func mustParseDoc(t *testing.T, path, src string) *syntax.Document {
+func mustParseDoc(t *testing.T, path, src string) *Document {
 	t.Helper()
-	doc, err := syntax.Parse(path, []byte(src))
+	doc, err := Parse(path, []byte(src))
 	if err != nil || doc == nil {
 		t.Fatalf("Parse %s: doc=%v err=%v", path, doc, err)
 	}
 	return doc
 }
 
-func assertDecls(t *testing.T, doc *syntax.Document, want []struct {
-	kind  syntax.Kind
+func assertDecls(t *testing.T, doc *Document, want []struct {
+	kind  Kind
 	names []string
 	doc   string
 }) {
@@ -1449,7 +1450,7 @@ func assertDecls(t *testing.T, doc *syntax.Document, want []struct {
 		if !decl.HasDoc {
 			t.Fatalf("decl %d %s has no documentation, want %q", i, decl.Kind, w.doc)
 		}
-		var matched *syntax.Comment
+		var matched *Comment
 		for j := range doc.Comments {
 			comment := &doc.Comments[j]
 			if comment.Range == decl.Doc && comment.Text == w.doc {
@@ -1463,7 +1464,7 @@ func assertDecls(t *testing.T, doc *syntax.Document, want []struct {
 	}
 }
 
-func docByKind(t *testing.T, doc *syntax.Document, kind syntax.Kind, name string) syntax.Declaration {
+func docByKind(t *testing.T, doc *Document, kind Kind, name string) Declaration {
 	t.Helper()
 	for _, decl := range doc.Declarations {
 		if decl.Kind == kind && len(decl.Names) == 1 && decl.Names[0] == name {
@@ -1471,10 +1472,10 @@ func docByKind(t *testing.T, doc *syntax.Document, kind syntax.Kind, name string
 		}
 	}
 	t.Fatalf("no %s %s in %s", kind, name, describeDecls(doc))
-	return syntax.Declaration{}
+	return Declaration{}
 }
 
-func describeDecls(doc *syntax.Document) string {
+func describeDecls(doc *Document) string {
 	var b strings.Builder
 	for i, decl := range doc.Declarations {
 		fmtDecl := decl.Kind
@@ -1491,7 +1492,7 @@ func describeDecls(doc *syntax.Document) string {
 	return b.String()
 }
 
-func extraOutside(snip syntax.Snippet, comment syntax.Comment) int {
+func extraOutside(snip Snippet, comment Comment) int {
 	extra := 0
 	if comment.Range.Start.Offset > snip.Range.Start.Offset {
 		extra += comment.Range.Start.Offset - snip.Range.Start.Offset
@@ -1500,4 +1501,244 @@ func extraOutside(snip syntax.Snippet, comment syntax.Comment) int {
 		extra += snip.Range.End.Offset - comment.Range.End.Offset
 	}
 	return extra
+}
+
+// fixtureLanguage exposes an arbitrary capability object to a test-local
+// registry. No global registry is modified by these tests.
+type fixtureLanguage struct {
+	id      string
+	suffix  string
+	catalog contracts.PresetCatalog
+	parsed  *contracts.Document
+	err     error
+	calls   []string
+}
+
+var _ contracts.Language = (*fixtureLanguage)(nil)
+
+func (f *fixtureLanguage) ID() string { return f.id }
+func (f *fixtureLanguage) Recognize(path string) bool {
+	return f.suffix != "" && strings.HasSuffix(path, f.suffix)
+}
+func (f *fixtureLanguage) Presets() contracts.PresetCatalog { return f.catalog }
+func (f *fixtureLanguage) Parse(source []byte) (*contracts.Document, error) {
+	f.calls = append(f.calls, "parse:"+string(source))
+	return f.parsed, f.err
+}
+func (f *fixtureLanguage) Context(source []byte, target types.Range, limits contracts.Limits) (types.Snippet, error) {
+	f.calls = append(f.calls, "comment")
+	return f.snippet(source, target, limits)
+}
+func (f *fixtureLanguage) DeclarationContext(source []byte, target types.Range, limits contracts.Limits) (types.Snippet, error) {
+	f.calls = append(f.calls, "declaration")
+	return f.snippet(source, target, limits)
+}
+func (f *fixtureLanguage) snippet(source []byte, target types.Range, limits contracts.Limits) (types.Snippet, error) {
+	if limits != (contracts.Limits{Lines: MaxContextLines, ExtraBytes: MaxContextExtraBytes}) {
+		return types.Snippet{}, errors.New("unexpected context limits")
+	}
+	if f.err != nil {
+		return types.Snippet{}, f.err
+	}
+	return types.Snippet{Start: target.Start, End: target.End, Text: string(source[target.Start.Offset:target.End.Offset])}, nil
+}
+func (f *fixtureLanguage) PathExcluded(path string, enabled []string) bool {
+	f.calls = append(f.calls, "path:"+path)
+	return len(enabled) > 0 && enabled[0] == "fixture:path"
+}
+func (f *fixtureLanguage) SourceExcluded(path string, source []byte, enabled []string) bool {
+	f.calls = append(f.calls, "source:"+path+":"+string(source))
+	return len(enabled) > 0 && enabled[0] == "fixture:source"
+}
+
+func TestRegistryDispatchesCompleteLanguage(t *testing.T) {
+	start := types.Position{Offset: 0, Line: 1, Column: 1}
+	end := types.Position{Offset: 3, Line: 1, Column: 4}
+	f := &fixtureLanguage{
+		id: "fixture", suffix: ".fixture",
+		catalog: contracts.PresetCatalog{
+			Concrete:   []string{"fixture:source", "fixture:path"},
+			Aggregates: []contracts.Aggregate{{ID: "fixture:all", Presets: []string{"fixture:source", "fixture:path"}}},
+		},
+		parsed: &contracts.Document{
+			Comments: []types.Comment{{Raw: "abc", Text: "normalized", Start: start, End: end}},
+			Declarations: []types.Declaration{
+				{Kind: "custom-form", Names: []string{"A", "B"}, Start: start, End: end, HasDoc: true, DocStart: start, DocEnd: end},
+				{Kind: "unnamed", Start: start, End: end},
+			},
+		},
+	}
+	other := &fixtureLanguage{id: "other", suffix: ".other"}
+	r, err := newRegistry([]contracts.Language{other, f})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.resolve("x.fixture") != f || r.resolve("x.other") != other || r.resolve("x.unknown") != nil {
+		t.Fatal("recognition did not resolve the claiming object")
+	}
+	doc, err := r.parse("x.fixture", []byte("abc"))
+	if err != nil || doc == nil {
+		t.Fatalf("parse: %v", err)
+	}
+	rng := facadeRange(start, end)
+	want := &Document{
+		Path: "x.fixture", Language: "fixture",
+		Comments: []Comment{{Raw: "abc", Text: "normalized", Range: rng}},
+		Declarations: []Declaration{
+			{Kind: "custom-form", Names: []string{"A", "B"}, Range: rng, HasDoc: true, Doc: rng},
+			{Kind: "unnamed", Names: []string{}, Range: rng},
+		},
+	}
+	if !reflect.DeepEqual(doc, want) {
+		t.Fatalf("facade document = %+v, want %+v", doc, want)
+	}
+	doc.Declarations[0].Names[0] = "changed"
+	if f.parsed.Declarations[0].Names[0] != "A" {
+		t.Fatal("facade names alias the implementation result")
+	}
+	for _, declaration := range []bool{false, true} {
+		snippet, err := r.context("x.fixture", []byte("abc"), rng, declaration)
+		if err != nil || snippet != (Snippet{Range: rng, Text: "abc"}) {
+			t.Fatalf("context %v = %+v, %v", declaration, snippet, err)
+		}
+	}
+	if !reflect.DeepEqual(r.concrete, []string{"fixture:path", "fixture:source"}) ||
+		!reflect.DeepEqual(r.selectors, []string{"fixture:all", "fixture:path", "fixture:source"}) {
+		t.Fatalf("language catalog = %q / %q", r.concrete, r.selectors)
+	}
+	expansion, err := r.expandSelector("fixture:all")
+	if err != nil || !reflect.DeepEqual(expansion, r.concrete) {
+		t.Fatalf("aggregate expansion = %q, %v", expansion, err)
+	}
+	expansion[0] = "changed"
+	f.catalog.Aggregates[0].Presets[0] = "changed"
+	if next, _ := r.expandSelector("fixture:all"); !reflect.DeepEqual(next, r.concrete) {
+		t.Fatal("registry expansion aliases returned or provider catalog values")
+	}
+	if !r.pathExcluded("x.fixture", []string{"fixture:path"}) ||
+		!r.inspectExcluded("x.fixture", []byte("abc"), []string{"fixture:source"}) {
+		t.Fatal("exclusions did not use the same capability object")
+	}
+	wantCalls := []string{"parse:abc", "comment", "declaration", "path:x.fixture", "path:x.fixture", "source:x.fixture:abc"}
+	if !reflect.DeepEqual(f.calls, wantCalls) || len(other.calls) != 0 {
+		t.Fatalf("dispatch = %q, other = %q", f.calls, other.calls)
+	}
+	f.calls = nil
+	if !r.inspectExcluded("x.fixture", nil, []string{"fixture:path"}) || len(f.calls) != 1 {
+		t.Fatal("path exclusion did not short-circuit structural inspection")
+	}
+	f.calls = nil
+	if r.inspectExcluded("x.fixture", nil, nil) || r.pathExcluded("x.fixture", nil) ||
+		r.inspectExcluded("x.unknown", nil, []string{"fixture:source"}) || len(f.calls) != 0 {
+		t.Fatal("disabled or unsupported exclusion invoked a language capability")
+	}
+	if doc, err := r.parse("x.unknown", nil); doc != nil || err == nil {
+		t.Fatalf("unsupported parse = %v, %v", doc, err)
+	}
+	for _, declaration := range []bool{false, true} {
+		if snippet, err := r.context("x.unknown", nil, Range{}, declaration); snippet != (Snippet{}) || err == nil {
+			t.Fatalf("unsupported context = %v, %v", snippet, err)
+		}
+	}
+}
+
+func TestRegistryRejectsInvalidCapabilities(t *testing.T) {
+	concrete := func(id string, presets ...string) *fixtureLanguage {
+		return &fixtureLanguage{id: id, catalog: contracts.PresetCatalog{Concrete: presets}}
+	}
+	aggregate := func(id, selector string, members ...string) *fixtureLanguage {
+		return &fixtureLanguage{id: id, catalog: contracts.PresetCatalog{
+			Concrete:   []string{id + ":preset"},
+			Aggregates: []contracts.Aggregate{{ID: selector, Presets: members}},
+		}}
+	}
+	cases := []struct {
+		name            string
+		implementations []contracts.Language
+		message         string
+	}{
+		{"nil language", []contracts.Language{nil}, "missing language identity"},
+		{"empty identity", []contracts.Language{concrete("")}, "missing language identity"},
+		{"duplicate language", []contracts.Language{concrete("a"), concrete("a")}, "duplicate language"},
+		{"duplicate concrete", []contracts.Language{concrete("a", "same"), concrete("b", "same")}, "duplicate selector"},
+		{"duplicate own concrete", []contracts.Language{concrete("a", "same", "same")}, "duplicate selector"},
+		{"empty concrete", []contracts.Language{concrete("a", "")}, "empty preset"},
+		{"duplicate aggregate", []contracts.Language{aggregate("a", "all", "a:preset"), aggregate("b", "all", "b:preset")}, "duplicate selector"},
+		{"aggregate concrete collision", []contracts.Language{concrete("a", "all"), aggregate("b", "all", "b:preset")}, "duplicate selector"},
+		{"concrete aggregate collision", []contracts.Language{aggregate("b", "all", "b:preset"), concrete("a", "all")}, "duplicate selector"},
+		{"empty aggregate identity", []contracts.Language{aggregate("a", "", "a:preset")}, "empty aggregate"},
+		{"empty aggregate", []contracts.Language{aggregate("a", "all")}, "empty aggregate"},
+		{"unknown member", []contracts.Language{aggregate("a", "all", "unknown")}, "invalid member"},
+		{"foreign member", []contracts.Language{concrete("b", "b:preset"), aggregate("a", "all", "b:preset")}, "invalid member"},
+		{"aggregate member", []contracts.Language{aggregate("a", "all", "all")}, "invalid member"},
+		{"duplicate member", []contracts.Language{aggregate("a", "all", "a:preset", "a:preset")}, "invalid member"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := newRegistry(tc.implementations); err == nil || !strings.Contains(err.Error(), tc.message) {
+				t.Fatalf("registry error = %v, want %q", err, tc.message)
+			}
+		})
+	}
+	if r, err := newRegistry(nil); err != nil || r.resolve("any") != nil {
+		t.Fatalf("empty registry = %+v, %v", r, err)
+	}
+}
+
+func TestRegistryOverlapIsIndependentOfOrder(t *testing.T) {
+	a := &fixtureLanguage{id: "a", suffix: ".fixture"}
+	b := &fixtureLanguage{id: "b", suffix: ".fixture"}
+	for _, implementations := range [][]contracts.Language{{a, b}, {b, a}} {
+		r, err := newRegistry(implementations)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, operation := range []func(){
+			func() { r.resolve("x.fixture") },
+			func() { r.parse("x.fixture", nil) },
+			func() { r.context("x.fixture", nil, Range{}, false) },
+			func() { r.context("x.fixture", nil, Range{}, true) },
+			func() { r.pathExcluded("x.fixture", []string{"enabled"}) },
+			func() { r.inspectExcluded("x.fixture", nil, []string{"enabled"}) },
+		} {
+			func() {
+				defer func() {
+					if got := recover(); got != `syntax registry: ambiguous path "x.fixture" claimed by a, b` {
+						t.Fatalf("overlap panic = %v", got)
+					}
+				}()
+				operation()
+			}()
+		}
+	}
+	if len(a.calls)+len(b.calls) != 0 {
+		t.Fatal("ambiguous recognition invoked a capability")
+	}
+}
+
+func TestRegistryAdaptsNeutralFailures(t *testing.T) {
+	f := &fixtureLanguage{id: "fixture", suffix: ".fixture", parsed: &contracts.Document{}}
+	r := mustRegistry([]contracts.Language{f})
+	f.err = &contracts.ParseError{Diagnostics: []types.Diagnostic{
+		{Position: types.Position{Line: 2, Column: 3}, Msg: "bad token"},
+		{Msg: "invalid source"},
+	}}
+	if doc, err := r.parse("x.fixture", nil); doc != nil || err == nil || err.Error() != "x.fixture:2:3: bad token\nx.fixture: invalid source" {
+		t.Fatalf("failed parse = %v, %v", doc, err)
+	}
+	for _, pair := range []struct{ internal, external error }{
+		{contracts.ErrMalformedRange, ErrMalformedRange},
+		{contracts.ErrCommentNotFound, ErrCommentNotFound},
+		{contracts.ErrAmbiguousComment, ErrAmbiguousComment},
+		{contracts.ErrMalformedDeclaration, ErrMalformedDeclaration},
+		{contracts.ErrDeclarationNotFound, ErrDeclarationNotFound},
+		{contracts.ErrAmbiguousDeclaration, ErrAmbiguousDeclaration},
+	} {
+		f.err = pair.internal
+		for _, declaration := range []bool{false, true} {
+			if snippet, err := r.context("x.fixture", nil, Range{}, declaration); snippet != (Snippet{}) || !errors.Is(err, pair.external) || err.Error() != "x.fixture: "+pair.external.Error() {
+				t.Fatalf("context failure = %+v, %v", snippet, err)
+			}
+		}
+	}
 }

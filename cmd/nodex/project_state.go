@@ -25,9 +25,10 @@ var errStaleIndex = errors.New("index is stale; run nodex index generate")
 // files are the included supported sources in discovery order. Each body is
 // the exact byte sequence its fingerprint was computed from.
 type projectState struct {
-	root   string
-	policy ignore.Policy
-	files  []supportedFile
+	sourceRoot string
+	workspace  string
+	policy     ignore.Policy
+	files      []supportedFile
 }
 
 // supportedFile is one included source file recognized by syntax.
@@ -47,20 +48,21 @@ func (s projectState) sources() []index.Source {
 
 // openProjectState reads the inputs that decide whether a snapshot is current.
 //
-// dir is opened as the project root. The effective ignore policy is
-// .nodex/ignore.json, or the zero policy when that document is absent.
+// dirs.SourceRoot is opened as the source boundary. The effective policy is
+// read from dirs.WorkspaceBase/.nodex/ignore.json, or is the zero policy
+// when that document is absent.
 // Included files come from the project. Manual exclusions are applied there.
 // Only paths the syntax facade recognizes are candidates. Enabled presets
 // then drop supported source. A path-only preset is applied before the file
 // is read. A structural preset may inspect the file bytes. Each remaining
 // file becomes a fingerprint of its logical path, language, and exact bytes.
 // Comment text is not parsed.
-func openProjectState(dir string) (projectState, error) {
-	opened, err := project.Open(dir)
+func openProjectState(dirs project.Locations) (projectState, error) {
+	opened, err := project.Open(dirs.SourceRoot)
 	if err != nil {
 		return projectState{}, err
 	}
-	policy, err := loadPolicy(opened.Root())
+	policy, err := loadPolicy(dirs.WorkspaceBase)
 	if err != nil {
 		return projectState{}, err
 	}
@@ -68,7 +70,7 @@ func openProjectState(dir string) (projectState, error) {
 	if err != nil {
 		return projectState{}, err
 	}
-	return projectState{root: opened.Root(), policy: policy, files: files}, nil
+	return projectState{sourceRoot: opened.Root(), workspace: dirs.WorkspaceBase, policy: policy, files: files}, nil
 }
 
 // selectedSources returns the supported sources that remain after manual
@@ -120,12 +122,12 @@ func selectedSources(opened *project.Project, policy ignore.Policy) ([]supported
 // A missing index, a corrupt index, and a stale index are errors. Nothing
 // is regenerated. Comment text is not parsed. An enabled structural preset
 // may classify source bytes while the source set is selected.
-func openCurrentIndex(dir string) (*index.Index, index.Snapshot, projectState, error) {
-	state, err := openProjectState(dir)
+func openCurrentIndex(dirs project.Locations) (*index.Index, index.Snapshot, projectState, error) {
+	state, err := openProjectState(dirs)
 	if err != nil {
 		return nil, index.Snapshot{}, projectState{}, err
 	}
-	idx, snap, err := index.Load(state.root)
+	idx, snap, err := index.Load(state.workspace)
 	if err != nil {
 		if errors.Is(err, index.ErrAbsent) {
 			return nil, index.Snapshot{}, projectState{}, errNoGeneratedIndex
@@ -138,10 +140,11 @@ func openCurrentIndex(dir string) (*index.Index, index.Snapshot, projectState, e
 	return idx, snap, state, nil
 }
 
-// loadPolicy reads .nodex/ignore.json. A missing document is the zero policy.
+// loadPolicy reads the workspace .nodex/ignore.json.
+// A missing document is the zero policy.
 // The file is not created. A symbolic link is not followed.
-func loadPolicy(root string) (ignore.Policy, error) {
-	nodex := filepath.Join(root, ".nodex")
+func loadPolicy(workspaceBase string) (ignore.Policy, error) {
+	nodex := filepath.Join(workspaceBase, ".nodex")
 	info, err := os.Lstat(nodex)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -155,7 +158,7 @@ func loadPolicy(root string) (ignore.Policy, error) {
 	if !info.IsDir() {
 		return ignore.Policy{}, errors.New(".nodex is not a directory")
 	}
-	document := filepath.Join(root, filepath.FromSlash(ignore.DocumentPath))
+	document := filepath.Join(workspaceBase, filepath.FromSlash(ignore.DocumentPath))
 	info, err = os.Lstat(document)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

@@ -88,11 +88,12 @@ func (e *UnknownFieldError) Error() string {
 	return fmt.Sprintf("unknown snapshot field %q", e.Name)
 }
 
-// Persist writes idx and the snapshot that names its inputs under root.
+// Persist writes idx and its input snapshot beneath workspaceBase/.nodex.
 //
-// root is the project root. policyIdentity is the identity of the effective
-// ignore policy. sources are the included supported files. Their order does
-// not change the persisted bytes. idx supplies the comments and declarations.
+// workspaceBase is an existing directory containing the control directory.
+// policyIdentity is the identity of the effective ignore policy. sources are
+// the included supported files. Their order does not change persisted bytes.
+// idx supplies the comments and declarations.
 // A nil index is an empty index.
 //
 // Persist validates and encodes the complete new state before it publishes
@@ -108,9 +109,9 @@ func (e *UnknownFieldError) Error() string {
 // Load rejects that set. On error before the first rename, an existing
 // committed index is left in place. Temporary files created by the failed
 // call are removed.
-func Persist(root, policyIdentity string, sources []Source, idx *Index) (Snapshot, error) {
-	if root == "" {
-		return Snapshot{}, errors.New("project root is empty")
+func Persist(workspaceBase, policyIdentity string, sources []Source, idx *Index) (Snapshot, error) {
+	if workspaceBase == "" {
+		return Snapshot{}, errors.New("workspace base is empty")
 	}
 	if err := validateDigest(policyIdentity); err != nil {
 		return Snapshot{}, fmt.Errorf("policy identity: %w", err)
@@ -151,7 +152,7 @@ func Persist(root, policyIdentity string, sources []Source, idx *Index) (Snapsho
 	if _, err := decodeSnapshot(snapshotBytes); err != nil {
 		return Snapshot{}, fmt.Errorf("encoded snapshot: %w", err)
 	}
-	indexDir, err := ensureIndexDir(root)
+	indexDir, err := ensureIndexDir(workspaceBase)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -162,7 +163,7 @@ func Persist(root, policyIdentity string, sources []Source, idx *Index) (Snapsho
 	return snap, nil
 }
 
-// Load reads the committed index under the project root.
+// Load reads the committed index under the workspace base.
 //
 // When snapshot.json is absent, Load returns a nil index, the zero snapshot,
 // and ErrAbsent. A snapshot that exists without comments.jsonl or
@@ -172,11 +173,11 @@ func Persist(root, policyIdentity string, sources []Source, idx *Index) (Snapsho
 // partial index.
 //
 // On success the index is immutable. Entries and Declarations return copies.
-func Load(root string) (*Index, Snapshot, error) {
-	if root == "" {
-		return nil, Snapshot{}, errors.New("project root is empty")
+func Load(workspaceBase string) (*Index, Snapshot, error) {
+	if workspaceBase == "" {
+		return nil, Snapshot{}, errors.New("workspace base is empty")
 	}
-	data, err := readCommitted(root, SnapshotPath)
+	data, err := readCommitted(workspaceBase, SnapshotPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, Snapshot{}, ErrAbsent
@@ -190,7 +191,7 @@ func Load(root string) (*Index, Snapshot, error) {
 	if err != nil {
 		return nil, Snapshot{}, fmt.Errorf("%w: %w", ErrCorrupt, err)
 	}
-	comments, err := readCommitted(root, CommentsPath)
+	comments, err := readCommitted(workspaceBase, CommentsPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, Snapshot{}, fmt.Errorf("%w: %s is missing", ErrCorrupt, CommentsPath)
@@ -207,7 +208,7 @@ func Load(root string) (*Index, Snapshot, error) {
 	if len(entries) != snap.CommentCount {
 		return nil, Snapshot{}, fmt.Errorf("%w: %w", ErrCorrupt, ErrCountMismatch)
 	}
-	declarations, err := readCommitted(root, DeclarationsPath)
+	declarations, err := readCommitted(workspaceBase, DeclarationsPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, Snapshot{}, fmt.Errorf("%w: %s is missing", ErrCorrupt, DeclarationsPath)
@@ -266,8 +267,8 @@ func indexFrom(entries []Entry, decls []Declaration) *Index {
 	return &Index{entries: stored, byID: byID, decls: storedDecls, declByID: declByID}
 }
 
-func ensureIndexDir(root string) (string, error) {
-	nodex := filepath.Join(root, ".nodex")
+func ensureIndexDir(workspaceBase string) (string, error) {
+	nodex := filepath.Join(workspaceBase, ".nodex")
 	if err := mkdirPlain(nodex); err != nil {
 		return "", err
 	}
@@ -385,8 +386,8 @@ func syncDir(dir string) error {
 	return f.Sync()
 }
 
-func readCommitted(root, logical string) ([]byte, error) {
-	current := root
+func readCommitted(workspaceBase, logical string) ([]byte, error) {
+	current := workspaceBase
 	elements := strings.Split(logical, "/")
 	var info os.FileInfo
 	for i, elem := range elements {

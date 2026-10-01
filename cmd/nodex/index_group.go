@@ -28,14 +28,14 @@ func dispatchIndex(inv invocation, args []string, getwd func() (string, error), 
 		fmt.Fprintf(stderr, "index %s takes no arguments\n", args[0])
 		return errors.New("usage")
 	}
-	dir, err := locate(inv, getwd)
+	dirs, err := locations(inv, getwd)
 	if err != nil {
 		fmt.Fprintf(stderr, "nodex: %v\n", err)
 		return err
 	}
 	switch args[0] {
 	case "generate":
-		nComments, nDecls, nSources, err := generate(dir)
+		nComments, nDecls, nSources, err := generate(dirs)
 		if err != nil {
 			fmt.Fprintf(stderr, "nodex: %v\n", err)
 			return err
@@ -46,28 +46,28 @@ func dispatchIndex(inv invocation, args []string, getwd func() (string, error), 
 			nSources, countNoun(nSources, "source file", "source files"))
 		return nil
 	case "comments":
-		text, err := comments(dir)
+		text, err := comments(dirs)
 		if err != nil {
 			fmt.Fprintf(stderr, "nodex: %v\n", err)
 			return err
 		}
 		return writeStdout(stdout, stderr, text)
 	case "declarations":
-		text, err := declarations(dir)
+		text, err := declarations(dirs)
 		if err != nil {
 			fmt.Fprintf(stderr, "nodex: %v\n", err)
 			return err
 		}
 		return writeStdout(stdout, stderr, text)
 	case "status":
-		text, err := status(dir)
+		text, err := status(dirs)
 		if err != nil {
 			fmt.Fprintf(stderr, "nodex: %v\n", err)
 			return err
 		}
 		return writeStdout(stdout, stderr, text)
 	case "show":
-		text, err := show(dir, args[1:])
+		text, err := show(dirs, args[1:])
 		if err != nil {
 			fmt.Fprintf(stderr, "nodex: %v\n", err)
 			return err

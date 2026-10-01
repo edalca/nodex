@@ -39,11 +39,11 @@ func (t showTarget) path() string {
 // snapshot is current and every ID has been resolved. Each source file is
 // read through the project, once per logical path, and its digest must still
 // match the snapshot fingerprint.
-func show(dir string, ids []string) (string, error) {
+func show(dirs project.Locations, ids []string) (string, error) {
 	if len(ids) == 0 {
 		return "", fmt.Errorf("index show requires an ID")
 	}
-	idx, snap, state, err := openCurrentIndex(dir)
+	idx, snap, state, err := openCurrentIndex(dirs)
 	if err != nil {
 		return "", err
 	}
@@ -55,7 +55,7 @@ func show(dir string, ids []string) (string, error) {
 		}
 		targets[i] = target
 	}
-	opened, err := project.Open(state.root)
+	opened, err := project.Open(state.sourceRoot)
 	if err != nil {
 		return "", err
 	}

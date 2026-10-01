@@ -1,5 +1,5 @@
 // Package project establishes the filesystem boundary of a source project
-// and lists the regular files inside that boundary.
+// and resolves the independent workspace base for Nodex control state.
 //
 // Open takes a directory the caller has already selected. It does not search
 // parent directories. Resolve searches upward from a starting directory for
@@ -32,6 +32,76 @@ import (
 // reported by the project are relative to that root and stay inside it.
 type Project struct {
 	root string
+}
+
+// Locations identifies the source boundary and the base for control state.
+// Both paths are absolute, cleaned, existing directories with links resolved.
+// Nodex control state belongs beneath WorkspaceBase/.nodex. Neither location
+// is a persisted source identity.
+type Locations struct {
+	// SourceRoot is the directory whose files are discovered and read.
+	SourceRoot string
+	// WorkspaceBase is the directory containing Nodex's .nodex control directory.
+	WorkspaceBase string
+}
+
+// ResolveLocations selects source and workspace directories from invocationCWD.
+// An empty root or outDir means that option was absent. An explicit root
+// selects source without marker discovery; otherwise source is discovered
+// from invocationCWD. An explicit outDir selects the workspace. Without it,
+// an explicit root uses invocationCWD as workspace, and automatic source
+// discovery uses the discovered source root as workspace. Relative options
+// are interpreted from invocationCWD. No directories are created and no
+// control state is read. Callers must still reject unsafe control components.
+func ResolveLocations(invocationCWD, root, outDir string) (Locations, error) {
+	cwd, err := absoluteDir(invocationCWD)
+	if err != nil {
+		return Locations{}, fmt.Errorf("invocation directory: %w", err)
+	}
+	source, err := ResolveSource(cwd, root)
+	if err != nil {
+		return Locations{}, err
+	}
+	workspace := source
+	if outDir != "" {
+		workspace, err = absoluteDir(fromDirectory(cwd, outDir))
+		if err != nil {
+			return Locations{}, fmt.Errorf("workspace base: %w", err)
+		}
+	} else if root != "" {
+		workspace = cwd
+	}
+	return Locations{SourceRoot: source, WorkspaceBase: workspace}, nil
+}
+
+// ResolveSource selects a source root without resolving a workspace.
+// An empty root uses marker discovery from invocationCWD. An explicit root
+// uses Open without ancestor discovery, relative to invocationCWD when needed.
+// An absolute explicit root does not require invocationCWD. This operation
+// also selects the project destination for project-local Agent Skills.
+func ResolveSource(invocationCWD, root string) (string, error) {
+	if root == "" {
+		return Resolve(invocationCWD)
+	}
+	if !filepath.IsAbs(root) {
+		cwd, err := absoluteDir(invocationCWD)
+		if err != nil {
+			return "", fmt.Errorf("invocation directory: %w", err)
+		}
+		invocationCWD = cwd
+	}
+	opened, err := Open(fromDirectory(invocationCWD, root))
+	if err != nil {
+		return "", err
+	}
+	return opened.Root(), nil
+}
+
+func fromDirectory(cwd, selected string) string {
+	if filepath.IsAbs(selected) {
+		return selected
+	}
+	return filepath.Join(cwd, selected)
 }
 
 // Open establishes the project boundary at root.

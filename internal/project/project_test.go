@@ -941,3 +941,78 @@ func resolvedDir(t *testing.T, dir string) string {
 	}
 	return filepath.Clean(got)
 }
+
+func TestResolveLocations(t *testing.T) {
+	source, cwd, out := t.TempDir(), t.TempDir(), t.TempDir()
+	writeFile(t, filepath.Join(source, ".git"), "gitdir: unused\n")
+	nested := filepath.Join(source, "internal", "history")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	relativeBase := t.TempDir()
+	relativeSource, relativeOut := filepath.Join(relativeBase, "source"), filepath.Join(relativeBase, "out")
+	for _, dir := range []string{relativeSource, relativeOut} {
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases := []struct{ name, cwd, root, out, source, workspace string }{
+		{"project root", source, "", "", source, source},
+		{"project subdirectory", nested, "", "", source, source},
+		{"no marker", cwd, "", "", cwd, cwd},
+		{"explicit root detached", cwd, source, "", source, cwd},
+		{"explicit root from source subdirectory", nested, source, "", source, nested},
+		{"out only", nested, "", out, source, out},
+		{"both", cwd, source, out, source, out},
+		{"relative root", relativeBase, "source", "", relativeSource, relativeBase},
+		{"relative out", relativeBase, relativeSource, "out", relativeSource, relativeOut},
+		{"relative both", relativeBase, "source", "out", relativeSource, relativeOut},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := project.ResolveLocations(tc.cwd, tc.root, tc.out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.SourceRoot != resolvedDir(t, tc.source) || got.WorkspaceBase != resolvedDir(t, tc.workspace) {
+				t.Fatalf("locations = %+v", got)
+			}
+			if _, err := os.Lstat(filepath.Join(tc.workspace, ".nodex")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("resolution created state: %v", err)
+			}
+		})
+	}
+	t.Run("out marker does not select source", func(t *testing.T) {
+		writeFile(t, filepath.Join(out, ".git"), "marker")
+		got, err := project.ResolveLocations(cwd, "", out)
+		if err != nil || got.SourceRoot != resolvedDir(t, cwd) {
+			t.Fatalf("locations = %+v, %v", got, err)
+		}
+	})
+	t.Run("workspace base links canonicalized", func(t *testing.T) {
+		link := filepath.Join(t.TempDir(), "link")
+		if err := os.Symlink(out, link); err != nil {
+			t.Fatal(err)
+		}
+		got, err := project.ResolveLocations(cwd, source, link)
+		if err != nil || got.WorkspaceBase != resolvedDir(t, out) {
+			t.Fatalf("locations = %+v, %v", got, err)
+		}
+	})
+	t.Run("invalid directories", func(t *testing.T) {
+		file := filepath.Join(cwd, "file")
+		writeFile(t, file, "file")
+		for _, invalid := range []string{filepath.Join(cwd, "missing"), file} {
+			got, err := project.ResolveLocations(cwd, source, invalid)
+			if err == nil || got != (project.Locations{}) {
+				t.Fatalf("invalid out = %+v, %v", got, err)
+			}
+		}
+		if _, err := project.ResolveLocations("", source, out); err == nil {
+			t.Fatal("empty cwd accepted")
+		}
+		if _, err := project.ResolveSource("", "relative"); err == nil {
+			t.Fatal("relative root without cwd accepted")
+		}
+	})
+}

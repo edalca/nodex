@@ -33,9 +33,8 @@
 // carries the range of that slice and the exact text. It does not carry a
 // syntax tree or a judgment about the comment or the declaration.
 //
-// The Go implementation is a private detail of this root. Callers import
-// this package and do not import a language subpackage. The types returned
-// here do not carry a Go syntax tree.
+// Language implementations are private details of this root. Callers import
+// this semantic facade, whose results contain no parser-specific structures.
 package syntax
 
 import (
@@ -43,18 +42,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/edalca/nodex/internal/syntax/golang"
+	"github.com/edalca/nodex/internal/syntax/contracts"
+	"github.com/edalca/nodex/internal/syntax/types"
 )
 
 // Language names a source language this package can interpret.
 // The zero value is not a supported language.
 type Language string
-
-const (
-	// Go is the Go programming language. A logical path names Go when it
-	// ends in the suffix ".go".
-	Go Language = "go"
-)
 
 const (
 	// MaxContextLines is the maximum number of physical source lines in a
@@ -125,9 +119,8 @@ type Range struct {
 
 // Comment is one comment unit.
 //
-// A unit is one group of comments as the language defines a group. For Go,
-// adjacent comments with no other tokens and no blank line between them are
-// one unit. Raw is the exact source text covering Range, taken from the
+// A unit is one group of comments as the language defines a group.
+// Raw is the exact source text covering Range, taken from the
 // bytes passed to Parse. Text is the normalized content of the unit: comment
 // delimiters are removed, directive text is kept, and the order of the
 // comments in the group is preserved.
@@ -238,10 +231,11 @@ func (e *ParseError) Error() string {
 // are not read. The second result is false when the suffix is not a
 // supported language.
 func Recognize(logicalPath string) (Language, bool) {
-	if strings.HasSuffix(logicalPath, ".go") {
-		return Go, true
+	implementation := languages.resolve(logicalPath)
+	if implementation == nil {
+		return "", false
 	}
-	return "", false
+	return Language(implementation.ID()), true
 }
 
 // Parse interprets source as the language of logicalPath.
@@ -253,16 +247,34 @@ func Recognize(logicalPath string) (Language, bool) {
 // A successful document contains every comment unit in physical order and
 // the declaration facts from that same parse.
 func Parse(logicalPath string, source []byte) (*Document, error) {
-	lang, ok := Recognize(logicalPath)
-	if !ok {
+	return languages.parse(logicalPath, source)
+}
+
+func (r registry) parse(logicalPath string, source []byte) (*Document, error) {
+	implementation := r.resolve(logicalPath)
+	if implementation == nil {
 		return nil, &UnsupportedError{Path: logicalPath}
 	}
-	switch lang {
-	case Go:
-		return parseGo(logicalPath, source)
-	default:
-		return nil, &UnsupportedError{Path: logicalPath}
+	got, err := implementation.Parse(source)
+	if err != nil {
+		return nil, parseFailure(logicalPath, err)
 	}
+	if got == nil {
+		panic("syntax language returned no document on success")
+	}
+	out := make([]Comment, len(got.Comments))
+	for i, c := range got.Comments {
+		out[i] = Comment{Raw: c.Raw, Text: c.Text, Range: facadeRange(c.Start, c.End)}
+	}
+	declared := make([]Declaration, len(got.Declarations))
+	for i, d := range got.Declarations {
+		names := make([]string, len(d.Names))
+		copy(names, d.Names)
+		declared[i] = Declaration{Kind: Kind(d.Kind), Names: names,
+			Range: facadeRange(d.Start, d.End), HasDoc: d.HasDoc,
+			Doc: facadeRange(d.DocStart, d.DocEnd)}
+	}
+	return &Document{Path: logicalPath, Language: Language(implementation.ID()), Comments: out, Declarations: declared}, nil
 }
 
 // Context returns the bounded structural snippet surrounding the comment
@@ -287,57 +299,7 @@ func Parse(logicalPath string, source []byte) (*Document, error) {
 // same limits. The slice stays inside the container. Text is copied from
 // source.
 func Context(logicalPath string, source []byte, commentRange Range) (Snippet, error) {
-	lang, ok := Recognize(logicalPath)
-	if !ok {
-		return Snippet{}, &UnsupportedError{Path: logicalPath}
-	}
-	switch lang {
-	case Go:
-		return contextGo(logicalPath, source, commentRange)
-	default:
-		return Snippet{}, &UnsupportedError{Path: logicalPath}
-	}
-}
-
-func contextGo(logicalPath string, source []byte, commentRange Range) (Snippet, error) {
-	if source == nil {
-		source = []byte{}
-	}
-	got, err := golang.Context(source, golang.Position{
-		Offset: commentRange.Start.Offset,
-		Line:   commentRange.Start.Line,
-		Column: commentRange.Start.Column,
-	}, golang.Position{
-		Offset: commentRange.End.Offset,
-		Line:   commentRange.End.Line,
-		Column: commentRange.End.Column,
-	}, golang.Limits{
-		Lines:      MaxContextLines,
-		ExtraBytes: MaxContextExtraBytes,
-	})
-	if err != nil {
-		return Snippet{}, contextFailure(logicalPath, err)
-	}
-	return Snippet{
-		Range: Range{
-			Start: Position{Offset: got.Start.Offset, Line: got.Start.Line, Column: got.Start.Column},
-			End:   Position{Offset: got.End.Offset, Line: got.End.Line, Column: got.End.Column},
-		},
-		Text: got.Text,
-	}, nil
-}
-
-func contextFailure(logicalPath string, err error) error {
-	switch {
-	case errors.Is(err, golang.ErrMalformedRange):
-		return fmt.Errorf("%s: %w", logicalPath, ErrMalformedRange)
-	case errors.Is(err, golang.ErrCommentNotFound):
-		return fmt.Errorf("%s: %w", logicalPath, ErrCommentNotFound)
-	case errors.Is(err, golang.ErrAmbiguousComment):
-		return fmt.Errorf("%s: %w", logicalPath, ErrAmbiguousComment)
-	default:
-		return parseFailure(logicalPath, err)
-	}
+	return languages.context(logicalPath, source, commentRange, false)
 }
 
 // DeclarationContext returns the bounded structural snippet of the
@@ -360,112 +322,61 @@ func contextFailure(logicalPath string, err error) error {
 // source. It is not reformatted, and a truncated slice contains no inserted
 // ellipsis.
 func DeclarationContext(logicalPath string, source []byte, declRange Range) (Snippet, error) {
-	lang, ok := Recognize(logicalPath)
-	if !ok {
+	return languages.context(logicalPath, source, declRange, true)
+}
+
+func (r registry) context(logicalPath string, source []byte, target Range, declaration bool) (Snippet, error) {
+	implementation := r.resolve(logicalPath)
+	if implementation == nil {
 		return Snippet{}, &UnsupportedError{Path: logicalPath}
 	}
-	switch lang {
-	case Go:
-		return declarationContextGo(logicalPath, source, declRange)
-	default:
-		return Snippet{}, &UnsupportedError{Path: logicalPath}
+	limits := contracts.Limits{Lines: MaxContextLines, ExtraBytes: MaxContextExtraBytes}
+	var got types.Snippet
+	var err error
+	if declaration {
+		got, err = implementation.DeclarationContext(source, internalRange(target), limits)
+	} else {
+		got, err = implementation.Context(source, internalRange(target), limits)
 	}
-}
-
-func declarationContextGo(logicalPath string, source []byte, declRange Range) (Snippet, error) {
-	if source == nil {
-		source = []byte{}
-	}
-	got, err := golang.DeclarationContext(source, golang.Position{
-		Offset: declRange.Start.Offset,
-		Line:   declRange.Start.Line,
-		Column: declRange.Start.Column,
-	}, golang.Position{
-		Offset: declRange.End.Offset,
-		Line:   declRange.End.Line,
-		Column: declRange.End.Column,
-	}, golang.Limits{
-		Lines:      MaxContextLines,
-		ExtraBytes: MaxContextExtraBytes,
-	})
 	if err != nil {
-		return Snippet{}, declarationContextFailure(logicalPath, err)
+		return Snippet{}, contextFailure(logicalPath, err)
 	}
-	return Snippet{
-		Range: Range{
-			Start: Position{Offset: got.Start.Offset, Line: got.Start.Line, Column: got.Start.Column},
-			End:   Position{Offset: got.End.Offset, Line: got.End.Line, Column: got.End.Column},
-		},
-		Text: got.Text,
-	}, nil
+	return Snippet{Range: facadeRange(got.Start, got.End), Text: got.Text}, nil
 }
 
-func declarationContextFailure(logicalPath string, err error) error {
-	switch {
-	case errors.Is(err, golang.ErrMalformedDeclaration):
-		return fmt.Errorf("%s: %w", logicalPath, ErrMalformedDeclaration)
-	case errors.Is(err, golang.ErrDeclarationNotFound):
-		return fmt.Errorf("%s: %w", logicalPath, ErrDeclarationNotFound)
-	case errors.Is(err, golang.ErrAmbiguousDeclaration):
-		return fmt.Errorf("%s: %w", logicalPath, ErrAmbiguousDeclaration)
-	default:
-		return parseFailure(logicalPath, err)
+func contextFailure(logicalPath string, err error) error {
+	for _, pair := range []struct{ internal, external error }{
+		{contracts.ErrMalformedRange, ErrMalformedRange},
+		{contracts.ErrCommentNotFound, ErrCommentNotFound},
+		{contracts.ErrAmbiguousComment, ErrAmbiguousComment},
+		{contracts.ErrMalformedDeclaration, ErrMalformedDeclaration},
+		{contracts.ErrDeclarationNotFound, ErrDeclarationNotFound},
+		{contracts.ErrAmbiguousDeclaration, ErrAmbiguousDeclaration},
+	} {
+		if errors.Is(err, pair.internal) {
+			return fmt.Errorf("%s: %w", logicalPath, pair.external)
+		}
 	}
+	return parseFailure(logicalPath, err)
 }
 
-func parseGo(logicalPath string, source []byte) (*Document, error) {
-	if source == nil {
-		source = []byte{}
-	}
-	comments, decls, err := golang.ParseFile(source)
-	if err != nil {
-		return nil, parseFailure(logicalPath, err)
-	}
-	out := make([]Comment, len(comments))
-	for i, c := range comments {
-		out[i] = Comment{
-			Raw:  c.Raw,
-			Text: c.Text,
-			Range: Range{
-				Start: Position{Offset: c.Start.Offset, Line: c.Start.Line, Column: c.Start.Column},
-				End:   Position{Offset: c.End.Offset, Line: c.End.Line, Column: c.End.Column},
-			},
-		}
-	}
-	declared := make([]Declaration, len(decls))
-	for i, d := range decls {
-		names := d.Names
-		if names == nil {
-			names = []string{}
-		} else {
-			names = append([]string(nil), d.Names...)
-		}
-		declared[i] = Declaration{
-			Kind:  Kind(d.Kind),
-			Names: names,
-			Range: Range{
-				Start: Position{Offset: d.Start.Offset, Line: d.Start.Line, Column: d.Start.Column},
-				End:   Position{Offset: d.End.Offset, Line: d.End.Line, Column: d.End.Column},
-			},
-			HasDoc: d.HasDoc,
-			Doc: Range{
-				Start: Position{Offset: d.DocStart.Offset, Line: d.DocStart.Line, Column: d.DocStart.Column},
-				End:   Position{Offset: d.DocEnd.Offset, Line: d.DocEnd.Line, Column: d.DocEnd.Column},
-			},
-		}
-	}
-	return &Document{Path: logicalPath, Language: Go, Comments: out, Declarations: declared}, nil
+func facadeRange(start, end types.Position) Range {
+	return Range{Start: Position(start), End: Position(end)}
+}
+
+func internalRange(r Range) types.Range {
+	return types.Range{Start: types.Position(r.Start), End: types.Position(r.End)}
 }
 
 func parseFailure(logicalPath string, err error) error {
-	var ge *golang.Error
-	if errors.As(err, &ge) {
-		return &ParseError{Path: logicalPath, Detail: formatDiagnostics(logicalPath, ge.Diagnostics)}
+	var failure *contracts.ParseError
+	if errors.As(err, &failure) {
+		return &ParseError{Path: logicalPath, Detail: formatDiagnostics(logicalPath, failure.Diagnostics)}
 	}
 	return &ParseError{Path: logicalPath, Detail: fmt.Sprintf("%s: %s", logicalPath, err.Error())}
 }
 
-func formatDiagnostics(logicalPath string, diags []golang.Diagnostic) string {
+func formatDiagnostics(logicalPath string, diags []types.Diagnostic) string {
 	if len(diags) == 0 {
 		return "parse " + logicalPath
 	}
@@ -478,4 +389,56 @@ func formatDiagnostics(logicalPath string, diags []golang.Diagnostic) string {
 		parts[i] = fmt.Sprintf("%s: %s", logicalPath, d.Msg)
 	}
 	return strings.Join(parts, "\n")
+}
+
+// Selectors returns the command-line preset selectors known to this build,
+// in lexical order. The result includes concrete presets and aggregate
+// selectors. It is a copy.
+func Selectors() []string {
+	return append([]string{}, languages.selectors...)
+}
+
+// ConcretePresets returns the preset identifiers this build can persist,
+// in lexical order. Aggregate selectors are not included. The result is a copy.
+func ConcretePresets() []string {
+	return append([]string{}, languages.concrete...)
+}
+
+// ExpandSelector returns the concrete preset identifiers selected by selector.
+//
+// A concrete identifier selects itself. An aggregate selector expands to the
+// concrete presets of that language known to this build. The result is a new
+// slice in lexical order and never contains the aggregate selector. An
+// unknown selector is rejected.
+func ExpandSelector(selector string) ([]string, error) {
+	return languages.expandSelector(selector)
+}
+
+// ValidatePresets reports whether every id is a concrete preset this build
+// can persist. Aggregate selectors and unknown identifiers are rejected.
+// An empty list is valid. The list is not reordered.
+func ValidatePresets(ids []string) error {
+	return languages.validatePresets(ids)
+}
+
+// PathExcluded reports whether enabled presets exclude logicalPath from its
+// path alone.
+//
+// logicalPath is a slash-separated logical project path. enabled holds
+// concrete preset identifiers. An unrecognized path is not excluded. Presets
+// that need source text are not applied here, and source is not read.
+func PathExcluded(logicalPath string, enabled []string) bool {
+	return languages.pathExcluded(logicalPath, enabled)
+}
+
+// InspectExcluded reports whether enabled presets exclude logicalPath after
+// structural inspection.
+//
+// source is the file bytes. It is parsed only when an enabled preset
+// classifies files by structure. With no such preset, source is not
+// inspected and may be nil. Path-only presets are also applied, so a caller
+// that already dropped path exclusions can still use this as the full
+// decision. An unrecognized path is not excluded.
+func InspectExcluded(logicalPath string, source []byte, enabled []string) bool {
+	return languages.inspectExcluded(logicalPath, source, enabled)
 }

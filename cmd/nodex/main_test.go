@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -35,7 +36,7 @@ func TestMain(m *testing.M) {
 func TestGenerateUsage(t *testing.T) {
 	root := t.TempDir()
 	stdout, stderr, err := runAt(root)
-	if err == nil || stdout != "" || stderr != "usage: nodex [--root <path>] index|version|ignore|skill\n" {
+	if err == nil || stdout != "" || stderr != commandUsage+"\n" {
 		t.Fatalf("no args = %q %q %v", stdout, stderr, err)
 	}
 	for _, command := range []string{"generate", "comments", "status", "show"} {
@@ -696,17 +697,17 @@ func TestCommentsOutput(t *testing.T) {
 		writeProjectFile(t, root, "pkg/main.go", "// hello\n\npackage main\n")
 		generateOK(t, root)
 		got := commandOK(t, root, "comments")
-		want := "## C000001\n\nhello\n"
+		want := "## C000001\n\nfile: `pkg/main.go`\n\nhello\n"
 		if got != want {
 			t.Fatalf("stdout = %q, want %q", got, want)
 		}
-		assertNoCommentMetadata(t, got)
+		assertNoDetailedCommentMetadata(t, got)
 	})
 	t.Run("trailing space", func(t *testing.T) {
 		root := t.TempDir()
 		writeProjectFile(t, root, "a.go", "// hello \n\npackage a\n")
 		generateOK(t, root)
-		if got := commandOK(t, root, "comments"); got != "## C000001\n\nhello \n" {
+		if got := commandOK(t, root, "comments"); got != "## C000001\n\nfile: `a.go`\n\nhello \n" {
 			t.Fatalf("stdout = %q", got)
 		}
 	})
@@ -716,13 +717,13 @@ func TestCommentsOutput(t *testing.T) {
 		writeProjectFile(t, root, "b.go", "// second\n\npackage b\n")
 		generateOK(t, root)
 		got := commandOK(t, root, "comments")
-		want := "## C000001\n\nfirst\n\n## C000002\n\nsecond\n"
+		want := "## C000001\n\nfile: `a.go`\n\nfirst\n\n## C000002\n\nfile: `b.go`\n\nsecond\n"
 		if got != want {
 			t.Fatalf("stdout = %q, want %q", got, want)
 		}
-		assertNoCommentMetadata(t, got)
-		if strings.Contains(got, "a.go") || strings.Contains(got, "b.go") {
-			t.Fatalf("stdout contains a path: %q", got)
+		assertNoDetailedCommentMetadata(t, got)
+		if strings.Contains(got, root) {
+			t.Fatalf("stdout contains an absolute path: %q", got)
 		}
 	})
 	t.Run("multiline", func(t *testing.T) {
@@ -730,7 +731,7 @@ func TestCommentsOutput(t *testing.T) {
 		writeProjectFile(t, root, "a.go", "// alpha\n//\n// beta\npackage a\n")
 		generateOK(t, root)
 		got := commandOK(t, root, "comments")
-		want := "## C000001\n\nalpha\n\nbeta\n"
+		want := "## C000001\n\nfile: `a.go`\n\nalpha\n\nbeta\n"
 		if got != want {
 			t.Fatalf("stdout = %q, want %q", got, want)
 		}
@@ -740,14 +741,14 @@ func TestCommentsOutput(t *testing.T) {
 		writeProjectFile(t, root, "a.go", "// # Title\n// **bold** and `code`\n// a < b & c\n// ```\npackage a\n")
 		generateOK(t, root)
 		got := commandOK(t, root, "comments")
-		want := "## C000001\n\n# Title\n**bold** and `code`\na < b & c\n```\n"
+		want := "## C000001\n\nfile: `a.go`\n\n# Title\n**bold** and `code`\na < b & c\n```\n"
 		if got != want {
 			t.Fatalf("stdout = %q, want %q", got, want)
 		}
 		if strings.Count(got, "```") != 1 {
 			t.Fatalf("code fence count = %d in %q", strings.Count(got, "```"), got)
 		}
-		assertNoCommentMetadata(t, got)
+		assertNoDetailedCommentMetadata(t, got)
 		idx, _ := loadIndex(t, root)
 		if got != formatComments(idx.Entries()) {
 			t.Fatal("stdout does not match the stored comment text")
@@ -765,7 +766,7 @@ func TestCommentsOutput(t *testing.T) {
 		if len(idx.Entries()) != 1 || idx.Entries()[0].Text != "\nalpha\nbeta\n" {
 			t.Fatalf("stored text = %q", idx.Entries()[0].Text)
 		}
-		if got != "## C000001\n\n\nalpha\nbeta\n" {
+		if got != "## C000001\n\nfile: `a.go`\n\n\nalpha\nbeta\n" {
 			t.Fatalf("stdout = %q", got)
 		}
 	})
@@ -797,7 +798,7 @@ func TestCommentsRejectsCorrupt(t *testing.T) {
 func TestSnapshotCurrentness(t *testing.T) {
 	t.Run("unchanged", func(t *testing.T) {
 		root := oneCommentProject(t)
-		if got := commandOK(t, root, "comments"); got != "## C000001\n\nalpha\n" {
+		if got := commandOK(t, root, "comments"); got != "## C000001\n\nfile: `a.go`\n\nalpha\n" {
 			t.Fatalf("comments = %q", got)
 		}
 		if got := commandOK(t, root, "status"); got != statusCurrent(1, 1) {
@@ -935,7 +936,7 @@ func TestFreshnessIgnoresNonInputs(t *testing.T) {
 	writeProjectFile(t, root, ".outputs/hidden.go", "// hidden\npackage hidden\n")
 	generateOK(t, root)
 	before := pairBytes(t, root)
-	wantComments := "## C000001\n\nalpha\n"
+	wantComments := "## C000001\n\nfile: `a.go`\n\nalpha\n"
 	wantStatus := statusCurrent(1, 1)
 
 	writeProjectFile(t, root, "README.md", "package {\nnot go\n")
@@ -1116,9 +1117,9 @@ func statusStale(indexed, current, comments int) string {
 	return fmt.Sprintf("index: stale\nindexed sources: %d\ncurrent sources: %d\ncomments: %d\n", indexed, current, comments)
 }
 
-func assertNoCommentMetadata(t *testing.T, got string) {
+func assertNoDetailedCommentMetadata(t *testing.T, got string) {
 	t.Helper()
-	for _, forbidden := range []string{"main.go", "a.go", ".go", "language", "offset", "column", "line ", "go"} {
+	for _, forbidden := range []string{"language:", "offsets:", "columns:", "lines:", "range:", "### Context", "source digest:"} {
 		if strings.Contains(got, forbidden) {
 			t.Fatalf("stdout contains %q: %q", forbidden, got)
 		}
@@ -1987,7 +1988,7 @@ func TestPresetSourceSelection(t *testing.T) {
 		generateOK(t, root)
 		before := pairBytes(t, root)
 		writeProjectFile(t, root, ignore.DocumentPath, "{\n  \"exclude\": [\"zzz/\"],\n  \"presets\": [\"go:vendor\", \"go:tests\"],\n  \"schema\": 1\n}\n")
-		if got := commandOK(t, root, "comments"); got != "## C000001\n\nkeep\n" {
+		if got := commandOK(t, root, "comments"); got != "## C000001\n\nfile: `keep.go`\n\nkeep\n" {
 			t.Fatalf("comments = %q", got)
 		}
 		if got := commandOK(t, root, "status"); got != statusCurrent(1, 1) {
@@ -2043,7 +2044,7 @@ func TestRootFlagAndNestedResolution(t *testing.T) {
 	if got := runOK(t, nested, "status"); got != statusCurrent(2, 2) {
 		t.Fatalf("status = %q", got)
 	}
-	if got := runOK(t, nested, "comments"); got != "## C000001\n\nroot\n\n## C000002\n\nleaf\n" {
+	if got := runOK(t, nested, "comments"); got != "## C000001\n\nfile: `main.go`\n\nroot\n\n## C000002\n\nfile: `nested/pkg/leaf.go`\n\nleaf\n" {
 		t.Fatalf("comments = %q", got)
 	}
 	shown := runOK(t, nested, "show", "C000002")
@@ -2054,7 +2055,7 @@ func TestRootFlagAndNestedResolution(t *testing.T) {
 	other := t.TempDir()
 	writeProjectFile(t, other, "other.go", "// other\n\npackage other\n")
 	before := pairBytes(t, parent)
-	if got := runOK(t, nested, "--root", other, "generate"); got != "generated 1 comment and 1 declaration from 1 source file\n" {
+	if got := runOK(t, nested, "--root", other, "--out-dir", other, "generate"); got != "generated 1 comment and 1 declaration from 1 source file\n" {
 		t.Fatalf("explicit generate = %q", got)
 	}
 	requireSameIndex(t, parent, before)
@@ -2062,34 +2063,34 @@ func TestRootFlagAndNestedResolution(t *testing.T) {
 	if pathsOf(snap) != "other.go" {
 		t.Fatalf("explicit sources = %s", pathsOf(snap))
 	}
-	if got := runOK(t, parent, "--root", other, "comments"); got != "## C000001\n\nother\n" {
+	if got := runOK(t, parent, "--root", other, "--out-dir", other, "comments"); got != "## C000001\n\nfile: `other.go`\n\nother\n" {
 		t.Fatalf("explicit comments = %q", got)
 	}
-	if got := runOK(t, parent, "--root", other, "status"); got != statusCurrent(1, 1) {
+	if got := runOK(t, parent, "--root", other, "--out-dir", other, "status"); got != statusCurrent(1, 1) {
 		t.Fatalf("explicit status = %q", got)
 	}
-	if got := runOK(t, parent, "--root", other, "show", "C000001"); !strings.Contains(got, "file: `other.go`") {
+	if got := runOK(t, parent, "--root", other, "--out-dir", other, "show", "C000001"); !strings.Contains(got, "file: `other.go`") {
 		t.Fatalf("explicit show = %q", got)
 	}
-	runOK(t, parent, "--root", other, "ignore", "list")
-	runOK(t, parent, "--root", other, "ignore", "enable", "go:tests")
+	runOK(t, parent, "--root", other, "--out-dir", other, "ignore", "list")
+	runOK(t, parent, "--root", other, "--out-dir", other, "ignore", "enable", "go:tests")
 	assertIgnore(t, other, []string{"go:tests"}, nil)
 	if _, err := os.Stat(filepath.Join(parent, ".nodex", "ignore.json")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("explicit enable wrote the discovered project")
 	}
-	runOK(t, nested, "--root", other, "ignore", "disable", "go:tests")
+	runOK(t, nested, "--root", other, "--out-dir", other, "ignore", "disable", "go:tests")
 	assertIgnore(t, other, nil, nil)
 
 	if got := runOK(t, parent, "--", "status"); got != statusCurrent(2, 2) {
 		t.Fatalf("end of options = %q", got)
 	}
-	if got := runOK(t, parent, "--root", other, "--", "status"); got != statusCurrent(1, 1) {
+	if got := runOK(t, parent, "--root", other, "--out-dir", other, "--", "status"); got != statusCurrent(1, 1) {
 		t.Fatalf("root then end of options = %q", got)
 	}
-	if got := runOK(t, parent, "--root="+other, "status"); got != statusCurrent(1, 1) {
+	if got := runOK(t, parent, "--root="+other, "--out-dir="+other, "status"); got != statusCurrent(1, 1) {
 		t.Fatalf("equals form = %q", got)
 	}
-	stdout, stderr, err := runAt(parent, "--", "--root", other, "status")
+	stdout, stderr, err := runAt(parent, "--", "--root", other, "--out-dir", other, "status")
 	if err == nil || stdout != "" || stderr != "unknown command \"--root\"\n" {
 		t.Fatalf("option after end = %q %q %v", stdout, stderr, err)
 	}
@@ -2124,8 +2125,7 @@ func TestRootFlagAndNestedResolution(t *testing.T) {
 
 	explicit := filepath.Join(parent, "explicit")
 	writeProjectFile(t, explicit, "main.go", "// explicit\n\npackage main\n")
-	t.Chdir(parent)
-	if got := runOK(t, "/does/not/matter", "--root", "explicit", "generate"); got != "generated 1 comment and 1 declaration from 1 source file\n" {
+	if got := runOK(t, parent, "--root", "explicit", "--out-dir", "explicit", "generate"); got != "generated 1 comment and 1 declaration from 1 source file\n" {
 		t.Fatalf("relative = %q", got)
 	}
 	_, snap = loadIndex(t, explicit)
@@ -2153,7 +2153,7 @@ func TestFinalCLILifecycle(t *testing.T) {
 	if got := runOK(t, nested, "status"); got != statusCurrent(2, 2) {
 		t.Fatalf("status = %q", got)
 	}
-	if got := runOK(t, nested, "comments"); got != "## C000001\n\nhello\n\n## C000002\n\ntest note\n" {
+	if got := runOK(t, nested, "comments"); got != "## C000001\n\nfile: `main.go`\n\nhello\n\n## C000002\n\nfile: `main_test.go`\n\ntest note\n" {
 		t.Fatalf("comments = %q", got)
 	}
 	shown := runOK(t, nested, "show", "C000001")
@@ -2180,7 +2180,7 @@ func TestFinalCLILifecycle(t *testing.T) {
 	if got := runOK(t, nested, "status"); got != statusCurrent(1, 1) {
 		t.Fatalf("restored status = %q", got)
 	}
-	if got := runOK(t, nested, "comments"); got != "## C000001\n\nhello\n" {
+	if got := runOK(t, nested, "comments"); got != "## C000001\n\nfile: `main.go`\n\nhello\n" {
 		t.Fatalf("restored comments = %q", got)
 	}
 	shown = runOK(t, nested, "show", "C000001")
@@ -2208,10 +2208,10 @@ func TestFinalCLILifecycle(t *testing.T) {
 
 	other := t.TempDir()
 	writeProjectFile(t, other, "solo.go", "// solo\n\npackage solo\n")
-	if got := runOK(t, nested, "--root", other, "generate"); got != "generated 1 comment and 1 declaration from 1 source file\n" {
+	if got := runOK(t, nested, "--root", other, "--out-dir", other, "generate"); got != "generated 1 comment and 1 declaration from 1 source file\n" {
 		t.Fatalf("root generate = %q", got)
 	}
-	if got := runOK(t, root, "--root", other, "status"); got != statusCurrent(1, 1) {
+	if got := runOK(t, root, "--root", other, "--out-dir", other, "status"); got != statusCurrent(1, 1) {
 		t.Fatalf("root status = %q", got)
 	}
 	_, snap = loadIndex(t, other)
@@ -2246,7 +2246,7 @@ func indexArgs(args []string) []string {
 			name, _, hasValue := splitFlag(arg)
 			out = append(out, arg)
 			i++
-			if name == "root" && !hasValue && i < len(args) {
+			if (name == "root" || name == "out-dir") && !hasValue && i < len(args) {
 				out = append(out, args[i])
 				i++
 			}
@@ -2735,22 +2735,22 @@ func TestIndexDeclarations(t *testing.T) {
 		"\t}\n" +
 		")\n"
 	const wantDecls = "" +
-		"## D000001\n\nkind: package\nnames: sample\ndoc: C000001\n\n" +
-		"## D000002\n\nkind: function\nnames: F\ndoc: C000002\n\n" +
-		"## D000003\n\nkind: function\nnames: g\ndoc: none\n\n" +
-		"## D000004\n\nkind: const-group\nnames: A, B\ndoc: none\n\n" +
-		"## D000005\n\nkind: const\nnames: A\ndoc: C000003\n\n" +
-		"## D000006\n\nkind: const\nnames: B\ndoc: none\n\n" +
-		"## D000007\n\nkind: type-group\nnames: T\ndoc: C000004\n\n" +
-		"## D000008\n\nkind: type\nnames: T\ndoc: none\n\n" +
-		"## D000009\n\nkind: field\nnames: Name\ndoc: C000005\n\n" +
-		"## D000010\n\nkind: field\nnames: Hidden\ndoc: none\n"
+		"## D000001\n\nfile: `sample.go`\nkind: package\nnames: sample\ndoc: C000001\n\n" +
+		"## D000002\n\nfile: `sample.go`\nkind: function\nnames: F\ndoc: C000002\n\n" +
+		"## D000003\n\nfile: `sample.go`\nkind: function\nnames: g\ndoc: none\n\n" +
+		"## D000004\n\nfile: `sample.go`\nkind: const-group\nnames: A, B\ndoc: none\n\n" +
+		"## D000005\n\nfile: `sample.go`\nkind: const\nnames: A\ndoc: C000003\n\n" +
+		"## D000006\n\nfile: `sample.go`\nkind: const\nnames: B\ndoc: none\n\n" +
+		"## D000007\n\nfile: `sample.go`\nkind: type-group\nnames: T\ndoc: C000004\n\n" +
+		"## D000008\n\nfile: `sample.go`\nkind: type\nnames: T\ndoc: none\n\n" +
+		"## D000009\n\nfile: `sample.go`\nkind: field\nnames: Name\ndoc: C000005\n\n" +
+		"## D000010\n\nfile: `sample.go`\nkind: field\nnames: Hidden\ndoc: none\n"
 	const wantComments = "" +
-		"## C000001\n\nPackage sample documents sample.\n\n" +
-		"## C000002\n\nF documents F.\n\n" +
-		"## C000003\n\nA documents A.\n\n" +
-		"## C000004\n\nTGroup documents the type group.\n\n" +
-		"## C000005\n\nName documents Name.\n"
+		"## C000001\n\nfile: `sample.go`\n\nPackage sample documents sample.\n\n" +
+		"## C000002\n\nfile: `sample.go`\n\nF documents F.\n\n" +
+		"## C000003\n\nfile: `sample.go`\n\nA documents A.\n\n" +
+		"## C000004\n\nfile: `sample.go`\n\nTGroup documents the type group.\n\n" +
+		"## C000005\n\nfile: `sample.go`\n\nName documents Name.\n"
 
 	t.Run("empty project", func(t *testing.T) {
 		root := t.TempDir()
@@ -2773,7 +2773,7 @@ func TestIndexDeclarations(t *testing.T) {
 			t.Fatalf("comments = %q", got)
 		}
 		got := commandOK(t, root, "declarations")
-		want := "## D000001\n\nkind: package\nnames: a\ndoc: none\n"
+		want := "## D000001\n\nfile: `a.go`\nkind: package\nnames: a\ndoc: none\n"
 		if got != want {
 			t.Fatalf("declarations = %q\nwant %q", got, want)
 		}
@@ -2790,11 +2790,11 @@ func TestIndexDeclarations(t *testing.T) {
 		generateOK(t, root)
 		got := commandOK(t, root, "declarations")
 		want := "" +
-			"## D000001\n\nkind: package\nnames: p\ndoc: none\n\n" +
-			"## D000002\n\nkind: type\nnames: T\ndoc: none\n\n" +
-			"## D000003\n\nkind: field\nnames: none\ndoc: none\n\n" +
-			"## D000004\n\nkind: field\nnames:\ndoc: none\n\n" +
-			"## D000005\n\nkind: type\nnames: U\ndoc: none\n"
+			"## D000001\n\nfile: `a.go`\nkind: package\nnames: p\ndoc: none\n\n" +
+			"## D000002\n\nfile: `a.go`\nkind: type\nnames: T\ndoc: none\n\n" +
+			"## D000003\n\nfile: `a.go`\nkind: field\nnames: none\ndoc: none\n\n" +
+			"## D000004\n\nfile: `a.go`\nkind: field\nnames:\ndoc: none\n\n" +
+			"## D000005\n\nfile: `a.go`\nkind: type\nnames: U\ndoc: none\n"
 		if got != want {
 			t.Fatalf("declarations = %q\nwant %q", got, want)
 		}
@@ -2924,5 +2924,398 @@ func TestIndexDeclarations(t *testing.T) {
 	}
 	if got := commandOK(t, root, "status"); got != "index: corrupt\n" {
 		t.Fatalf("missing declarations status = %q", got)
+	}
+}
+
+func TestDiscoveryLogicalPaths(t *testing.T) {
+	for _, mode := range []string{"local", "detached", "out-dir"} {
+		t.Run(mode, func(t *testing.T) {
+			source, workspace, cwd := t.TempDir(), t.TempDir(), t.TempDir()
+			writeProjectFile(t, source, "z/example.go", "package example\n\nfunc Example() {}\n")
+			writeProjectFile(t, source, "a/b/example.go", "package example\n\n// Example comment.\nfunc Example() {}\n")
+			var options []string
+			switch mode {
+			case "local":
+				cwd, workspace = source, source
+			case "detached":
+				cwd = workspace
+				options = []string{"--root", source}
+			case "out-dir":
+				options = []string{"--root", source, "--out-dir", workspace}
+			}
+			runCommand := func(command string) string {
+				t.Helper()
+				return runOK(t, cwd, append(options, "index", command)...)
+			}
+			runCommand("generate")
+			before := pairBytes(t, workspace)
+			comments := runCommand("comments")
+			const wantComments = "## C000001\n\nfile: `a/b/example.go`\n\nExample comment.\n"
+			if comments != wantComments {
+				t.Fatalf("comments = %q, want %q", comments, wantComments)
+			}
+			declarations := runCommand("declarations")
+			const wantDeclarations = "" +
+				"## D000001\n\nfile: `a/b/example.go`\nkind: package\nnames: example\ndoc: none\n\n" +
+				"## D000002\n\nfile: `a/b/example.go`\nkind: function\nnames: Example\ndoc: C000001\n\n" +
+				"## D000003\n\nfile: `z/example.go`\nkind: package\nnames: example\ndoc: none\n\n" +
+				"## D000004\n\nfile: `z/example.go`\nkind: function\nnames: Example\ndoc: none\n"
+			if declarations != wantDeclarations {
+				t.Fatalf("declarations = %q, want %q", declarations, wantDeclarations)
+			}
+			for _, dir := range []string{source, workspace, cwd} {
+				if strings.Contains(comments, dir) || strings.Contains(declarations, dir) {
+					t.Fatalf("discovery contains absolute directory %q", dir)
+				}
+			}
+			requireSameIndex(t, workspace, before)
+		})
+	}
+}
+
+func TestDetachedWorkspace(t *testing.T) {
+	source, workspace := t.TempDir(), t.TempDir()
+	writeProjectFile(t, source, "a.go", "// alpha\npackage a\n")
+	writeProjectFile(t, source, "a_test.go", "// test\npackage a\n")
+	writeProjectFile(t, workspace, "wrong.go", "package {\n")
+	detached := func(args ...string) string {
+		t.Helper()
+		return runOK(t, workspace, append([]string{"--root", source}, args...)...)
+	}
+	if got := detached("status"); got != "index: missing\n" {
+		t.Fatalf("missing = %q", got)
+	}
+	detached("ignore", "list")
+	for _, command := range []string{"comments", "declarations", "show"} {
+		args := []string{"--root", source, "index", command}
+		if command == "show" {
+			args = append(args, "C000001")
+		}
+		stdout, _, err := runAt(workspace, args...)
+		if err == nil || stdout != "" {
+			t.Fatalf("missing %s = %q %v", command, stdout, err)
+		}
+	}
+	for _, dir := range []string{source, workspace} {
+		if _, err := os.Lstat(filepath.Join(dir, ".nodex")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("read created state in %s", dir)
+		}
+	}
+	if got := detached("generate"); got != "generated 2 comments and 2 declarations from 2 source files\n" {
+		t.Fatalf("generate = %q", got)
+	}
+	if got := detached("status"); got != statusCurrent(2, 2) {
+		t.Fatalf("current = %q", got)
+	}
+	if got := detached("comments"); got != "## C000001\n\nfile: `a.go`\n\nalpha\n\n## C000002\n\nfile: `a_test.go`\n\ntest\n" {
+		t.Fatalf("comments = %q", got)
+	}
+	const wantDeclarations = "" +
+		"## D000001\n\nfile: `a.go`\nkind: package\nnames: a\ndoc: C000001\n\n" +
+		"## D000002\n\nfile: `a_test.go`\nkind: package\nnames: a\ndoc: C000002\n"
+	if got := detached("declarations"); got != wantDeclarations {
+		t.Fatalf("declarations = %q", got)
+	}
+	for _, id := range []string{"C000001", "D000001"} {
+		if got := detached("show", id); !strings.Contains(got, "file: `a.go`") || !strings.Contains(got, "package a") {
+			t.Fatalf("show = %q", got)
+		}
+	}
+	_, snap := loadIndex(t, workspace)
+	if pathsOf(snap) != "a.go,a_test.go" || snap.Sources[0].Digest != index.DigestBytes([]byte("// alpha\npackage a\n")) {
+		t.Fatalf("source fingerprints = %+v", snap.Sources)
+	}
+	for _, path := range []string{index.SnapshotPath, index.CommentsPath, index.DeclarationsPath} {
+		data := readGen(t, workspace, path)
+		for _, dir := range []string{source, workspace} {
+			if bytes.Contains(data, []byte(dir)) {
+				t.Fatalf("%s persisted absolute path", path)
+			}
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(source, ".nodex")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("generation wrote source control state")
+	}
+	// Equal source bytes and policy remain current across source boundaries.
+	clone := t.TempDir()
+	writeProjectFile(t, clone, "a.go", "// alpha\npackage a\n")
+	writeProjectFile(t, clone, "a_test.go", "// test\npackage a\n")
+	if got := runOK(t, workspace, "--root", clone, "status"); got != statusCurrent(2, 2) {
+		t.Fatalf("equivalent source = %q", got)
+	}
+	before := pairBytes(t, workspace)
+	detached("ignore", "enable", "go:tests")
+	assertIgnore(t, workspace, []string{"go:tests"}, nil)
+	requireSameIndex(t, workspace, before)
+	if _, err := os.Lstat(filepath.Join(source, ".nodex")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("ignore wrote source control state")
+	}
+	if got := detached("status"); got != statusStale(2, 1, 2) {
+		t.Fatalf("policy status = %q", got)
+	}
+	detached("generate")
+	if got := detached("status"); got != statusCurrent(1, 1) {
+		t.Fatalf("policy current = %q", got)
+	}
+	// Source-local policy and malformed control-directory source never override workspace policy.
+	writeIgnore(t, source, nil, []string{"a.go"})
+	writeProjectFile(t, source, ".nodex/hidden.go", "package {\n")
+	sourcePolicy := readGen(t, source, ignore.DocumentPath)
+	detached("generate")
+	_, snap = loadIndex(t, workspace)
+	if pathsOf(snap) != "a.go" {
+		t.Fatalf("workspace policy sources = %s", pathsOf(snap))
+	}
+	if !bytes.Equal(sourcePolicy, readGen(t, source, ignore.DocumentPath)) {
+		t.Fatal("source policy changed")
+	}
+	detached("ignore", "disable", "go:tests")
+	assertIgnore(t, workspace, nil, nil)
+	if got := detached("status"); got != statusStale(1, 2, 1) {
+		t.Fatalf("disable = %q", got)
+	}
+	detached("generate")
+	// The default local workflow produces exactly the same bytes.
+	writeIgnore(t, source, nil, nil)
+	generateOK(t, source)
+	if !bytes.Equal(pairBytes(t, workspace), pairBytes(t, source)) {
+		t.Fatal("local and detached persisted bytes differ")
+	}
+}
+
+func TestOutputWorkspaceSelection(t *testing.T) {
+	source, cwd, out := t.TempDir(), t.TempDir(), t.TempDir()
+	writeProjectFile(t, source, "a.go", "// alpha\npackage a\n")
+	writeProjectFile(t, source, ".git/HEAD", "ref")
+	nested := filepath.Join(source, "nested")
+	if err := os.Mkdir(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, cwd string
+		flags     []string
+	}{
+		{"both", cwd, []string{"--root", source, "--out-dir", out}},
+		{"out only", nested, []string{"--out-dir", out}},
+		{"reverse equals", cwd, []string{"--out-dir=" + out, "--root=" + source}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := runOK(t, tc.cwd, append(tc.flags, "generate")...); got != "generated 1 comment and 1 declaration from 1 source file\n" {
+				t.Fatalf("generate = %q", got)
+			}
+			if got := runOK(t, tc.cwd, append(tc.flags, "status")...); got != statusCurrent(1, 1) {
+				t.Fatalf("status = %q", got)
+			}
+		})
+	}
+	for _, dir := range []string{source, cwd, nested} {
+		if _, err := os.Lstat(filepath.Join(dir, ".nodex")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("state outside out: %s", dir)
+		}
+	}
+	// An explicit root from inside that source uses the invocation subdirectory.
+	runOK(t, nested, "--root", source, "generate")
+	_, snap := loadIndex(t, nested)
+	if pathsOf(snap) != "a.go" {
+		t.Fatalf("nested fingerprints = %s", pathsOf(snap))
+	}
+	writeProjectFile(t, nested, ".nodex/hidden.go", "package {\n")
+	if got := runOK(t, nested, "--root", source, "status"); got != statusCurrent(1, 1) {
+		t.Fatalf("nested control included: %q", got)
+	}
+	// Relative flags use captured cwd even when the process cwd differs.
+	base := t.TempDir()
+	writeProjectFile(t, base, "source/a.go", "package a\n")
+	if err := os.Mkdir(filepath.Join(base, "out"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runOK(t, base, "--root", "source", "--out-dir", "out", "generate")
+	_, snap = loadIndex(t, filepath.Join(base, "out"))
+	if pathsOf(snap) != "a.go" {
+		t.Fatalf("relative fingerprints = %s", pathsOf(snap))
+	}
+}
+
+func TestOutputOptionErrorsAndIndependentCommands(t *testing.T) {
+	cwd, source := t.TempDir(), t.TempDir()
+	writeProjectFile(t, source, "a.go", "package a\n")
+	cases := []struct {
+		args    []string
+		message string
+	}{
+		{[]string{"--out-dir"}, "--out-dir requires a path\n"},
+		{[]string{"--out-dir="}, "--out-dir requires a path\n"},
+		{[]string{"--out-dir", "--root", source, "index", "generate"}, "--out-dir requires a path\n"},
+		{[]string{"--out-dir=-x", "index", "status"}, "--out-dir requires a path\n"},
+		{[]string{"--out-dir", cwd, "--out-dir=" + cwd, "index", "generate"}, "--out-dir was provided more than once\n"},
+		{[]string{"index", "generate", "--out-dir", cwd}, "index generate takes no arguments\n"},
+	}
+	for _, tc := range cases {
+		stdout, stderr, err := runAt(cwd, tc.args...)
+		if err == nil || stdout != "" || stderr != tc.message {
+			t.Fatalf("%q = %q %q %v", tc.args, stdout, stderr, err)
+		}
+	}
+	file := filepath.Join(cwd, "file")
+	writeProjectFile(t, cwd, "file", "file")
+	for _, invalid := range []string{filepath.Join(cwd, "missing"), file} {
+		stdout, stderr, err := runAt(cwd, "--root", source, "--out-dir", invalid, "index", "generate")
+		if err == nil || stdout != "" || !strings.Contains(stderr, "workspace base") {
+			t.Fatalf("invalid out = %q %q %v", stdout, stderr, err)
+		}
+	}
+	missing := filepath.Join(cwd, "missing")
+	for _, args := range [][]string{{"version"}, {"ignore", "presets"}, {"skill", "targets"}, {"skill", "show"}} {
+		stdout, stderr, err := runWith(func() (string, error) { t.Fatal("independent command opened cwd"); return "", nil }, append([]string{"--root", missing, "--out-dir", missing}, args...)...)
+		if err != nil || stderr != "" || stdout == "" {
+			t.Fatalf("independent %q = %q %q %v", args, stdout, stderr, err)
+		}
+	}
+	// out-dir has no role in either project or global skill destinations.
+	runOK(t, cwd, "--root", source, "--out-dir", missing, "skill", "install", "codex")
+	if _, err := os.Stat(filepath.Join(source, ".codex/skills/nodex/SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	oldHome := userHomeDir
+	userHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { userHomeDir = oldHome })
+	runOK(t, cwd, "--out-dir", missing, "skill", "install", "codex", "--global")
+	if _, err := os.Stat(filepath.Join(home, ".codex/skills/nodex/SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{cwd, source, home} {
+		if _, err := os.Lstat(filepath.Join(dir, ".nodex")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("unexpected control state: %s", dir)
+		}
+	}
+	if _, err := os.Lstat(missing); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("missing base created")
+	}
+}
+
+func TestDetachedControlSafety(t *testing.T) {
+	source, cwd := t.TempDir(), t.TempDir()
+	writeProjectFile(t, source, "a.go", "// alpha\npackage a\n")
+	for _, component := range []string{".nodex", ignore.DocumentPath, index.IndexDir, index.SnapshotPath, index.CommentsPath, index.DeclarationsPath} {
+		t.Run(component, func(t *testing.T) {
+			out, outside := t.TempDir(), t.TempDir()
+			target := filepath.Join(outside, "target")
+			path := filepath.Join(out, filepath.FromSlash(component))
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			isDir := component == ".nodex" || component == index.IndexDir
+			if isDir {
+				if err := os.Mkdir(target, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				runOK(t, cwd, "--root", source, "--out-dir", out, "generate")
+				if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+					t.Fatal(err)
+				}
+				writeProjectFile(t, outside, "target", "original")
+			}
+			if err := os.Symlink(target, path); err != nil {
+				t.Fatal(err)
+			}
+			for _, command := range []string{"status", "comments", "declarations", "show"} {
+				args := []string{"--root", source, "--out-dir", out, "index", command}
+				if command == "show" {
+					args = append(args, "C000001")
+				}
+				stdout, stderr, err := runAt(cwd, args...)
+				if component != ".nodex" && component != ignore.DocumentPath && command == "status" {
+					if err != nil || stdout != "index: corrupt\n" || stderr != "" {
+						t.Fatalf("status = %q %q %v", stdout, stderr, err)
+					}
+				} else if err == nil || stdout != "" || !strings.Contains(stderr, "symbolic link") {
+					t.Fatalf("%s = %q %q %v", command, stdout, stderr, err)
+				}
+			}
+			if component == ".nodex" || component == ignore.DocumentPath {
+				for _, args := range [][]string{{"ignore", "list"}, {"ignore", "enable", "go:tests"}, {"ignore", "disable", "go:tests"}, {"index", "generate"}} {
+					stdout, stderr, err := runAt(cwd, append([]string{"--root", source, "--out-dir", out}, args...)...)
+					if err == nil || stdout != "" || !strings.Contains(stderr, "symbolic link") {
+						t.Fatalf("%q = %q %q %v", args, stdout, stderr, err)
+					}
+				}
+			} else if component == index.IndexDir {
+				stdout, stderr, err := runAt(cwd, "--root", source, "--out-dir", out, "index", "generate")
+				if err == nil || stdout != "" || !strings.Contains(stderr, "symbolic link") {
+					t.Fatalf("generate = %q %q %v", stdout, stderr, err)
+				}
+			}
+			if isDir {
+				entries, err := os.ReadDir(target)
+				if err != nil || len(entries) != 0 {
+					t.Fatalf("symlink destination modified: %v %v", entries, err)
+				}
+			} else if string(readFile(t, target)) != "original" {
+				t.Fatal("symlink target modified")
+			}
+		})
+	}
+	t.Run("control directory file", func(t *testing.T) {
+		out := t.TempDir()
+		writeProjectFile(t, out, ".nodex", "original")
+		for _, args := range [][]string{{"index", "generate"}, {"index", "status"}, {"ignore", "list"}, {"ignore", "enable", "go:tests"}} {
+			stdout, stderr, err := runAt(cwd, append([]string{"--root", source, "--out-dir", out}, args...)...)
+			if err == nil || stdout != "" || !strings.Contains(stderr, ".nodex is not a directory") {
+				t.Fatalf("%q = %q %q %v", args, stdout, stderr, err)
+			}
+		}
+		if string(readFile(t, filepath.Join(out, ".nodex"))) != "original" {
+			t.Fatal("control conflict modified")
+		}
+	})
+}
+
+func TestDetachedBinary(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "nodex")
+	if output, err := exec.Command("go", "build", "-o", binary, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, output)
+	}
+	source, workspace, out := t.TempDir(), t.TempDir(), t.TempDir()
+	writeProjectFile(t, source, "a.go", "// alpha\npackage a\n")
+	writeProjectFile(t, source, "a_test.go", "// test\npackage a\n")
+	runBinary := func(cwd string, args ...string) string {
+		t.Helper()
+		command := exec.Command(binary, args...)
+		command.Dir = cwd
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("binary %q: %v\n%s", args, err, output)
+		}
+		return string(output)
+	}
+	runBinary(workspace, "--root", source, "index", "generate")
+	if got := runBinary(workspace, "--root", source, "index", "status"); got != statusCurrent(2, 2) {
+		t.Fatalf("status = %q", got)
+	}
+	loadIndex(t, workspace)
+	runBinary(workspace, "--root", source, "ignore", "enable", "go:tests")
+	assertIgnore(t, workspace, []string{"go:tests"}, nil)
+	runBinary(workspace, "--root", source, "index", "generate")
+	_, snap := loadIndex(t, workspace)
+	if pathsOf(snap) != "a.go" {
+		t.Fatalf("temporary ignores = %s", pathsOf(snap))
+	}
+	for _, dir := range []string{source, out} {
+		if _, err := os.Lstat(filepath.Join(dir, ".nodex")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("unexpected state in %s", dir)
+		}
+	}
+	otherCWD := t.TempDir()
+	runBinary(otherCWD, "--root", source, "--out-dir", out, "index", "generate")
+	if got := runBinary(otherCWD, "--root", source, "--out-dir", out, "index", "status"); got != statusCurrent(2, 2) {
+		t.Fatalf("override = %q", got)
+	}
+	loadIndex(t, out)
+	for _, dir := range []string{source, otherCWD} {
+		if _, err := os.Lstat(filepath.Join(dir, ".nodex")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("unexpected state in %s", dir)
+		}
 	}
 }

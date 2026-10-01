@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/edalca/nodex/internal/index"
+	"github.com/edalca/nodex/internal/project"
 )
 
 // declarations returns the compact Markdown form of the current declarations.
@@ -12,8 +13,8 @@ import (
 // index, and a stale index are errors. Nothing is regenerated. An empty
 // declaration list returns an empty string. Every declaration is included.
 // The text does not say whether documentation ought to exist.
-func declarations(dir string) (string, error) {
-	idx, _, _, err := openCurrentIndex(dir)
+func declarations(dirs project.Locations) (string, error) {
+	idx, _, _, err := openCurrentIndex(dirs)
 	if err != nil {
 		return "", err
 	}
@@ -22,11 +23,11 @@ func declarations(dir string) (string, error) {
 
 // formatDeclarations renders declarations as compact Markdown.
 //
-// Each block is the declaration ID, its kind, its names, and the comment ID
-// of the directly associated documentation comment. A declaration with no
-// names uses a names line that has no value. doc: none means the parser
-// recorded no documentation comment on that node. No declarations produce
-// an empty result.
+// Each block is the declaration ID, its logical file path, its kind, its names,
+// and the comment ID of the directly associated documentation comment. A
+// declaration with no names uses a names line that has no value. doc: none
+// means the parser recorded no documentation comment on that node. No
+// declarations produce an empty result.
 func formatDeclarations(decls []index.Declaration) string {
 	if len(decls) == 0 {
 		return ""
@@ -39,6 +40,9 @@ func formatDeclarations(decls []index.Declaration) string {
 		b.WriteString("## ")
 		b.WriteString(decl.ID.String())
 		b.WriteString("\n\n")
+		b.WriteString("file: `")
+		b.WriteString(decl.Path)
+		b.WriteString("`\n")
 		b.WriteString("kind: ")
 		b.WriteString(string(decl.Kind))
 		b.WriteByte('\n')

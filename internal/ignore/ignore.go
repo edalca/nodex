@@ -1,4 +1,4 @@
-// Package ignore compiles the project-local ignore document and matches
+// Package ignore compiles the workspace ignore document and matches
 // logical project-relative paths against that policy.
 //
 // The document is .nodex/ignore.json. Schema 1 is a JSON object with three
@@ -65,7 +65,7 @@ import (
 )
 
 const (
-	// DocumentPath is the path of the ignore document relative to the project root.
+	// DocumentPath is the path of the ignore document relative to the workspace base.
 	DocumentPath = ".nodex/ignore.json"
 
 	// SchemaVersion is the only document schema Parse accepts.
