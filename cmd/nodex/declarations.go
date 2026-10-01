@@ -11,14 +11,20 @@ import (
 //
 // The index is loaded through the index package. A missing index, a corrupt
 // index, and a stale index are errors. Nothing is regenerated. An empty
-// declaration list returns an empty string. Every declaration is included.
+// selection returns an empty string. Filters select already indexed facts.
 // The text does not say whether documentation ought to exist.
-func declarations(dirs project.Locations) (string, error) {
+func declarations(dirs project.Locations, filters discoveryFilters) (string, error) {
 	idx, _, _, err := openCurrentIndex(dirs)
 	if err != nil {
 		return "", err
 	}
-	return formatDeclarations(idx.Declarations()), nil
+	var selected []index.Declaration
+	for _, decl := range idx.Declarations() {
+		if filters.matchDeclaration(decl) {
+			selected = append(selected, decl)
+		}
+	}
+	return formatDeclarations(selected), nil
 }
 
 // formatDeclarations renders declarations as compact Markdown.

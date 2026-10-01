@@ -78,7 +78,29 @@ Discovery provides an ID, a logical file path, and a compact fact. File paths ar
 
 `doc: none` means only that the parser recorded no documentation comment directly on that declaration. It does not mean that documentation is required, that the declaration is defective, or that a comment should be added. Do not treat `doc: none` as a defect by itself.
 
-The declaration list includes declarations that have direct documentation and declarations that do not. It is not a filter.
+The declaration list includes declarations that have direct documentation and declarations that do not.
+
+## Reduce discovery structurally
+
+Prefer this workflow: status → filtered discovery → show → analysis. Generate when status requires it, then use structural selectors to reduce large discovery streams before choosing IDs:
+
+```bash
+nodex index comments \
+  --file internal/history internal/governance
+
+nodex index declarations \
+  --file internal/history \
+  --kind type method \
+  --name Service ProjectAuthority
+```
+
+Each filter may appear once, in any order, and takes one or more consecutive values until the next filter or the end of arguments. Unsupported flags, repeated flags, and missing values are usage errors. Values within one filter use OR; different filter categories use AND. Duplicate values are harmless and deduplicated internally. Results retain canonical fact order, snapshot-local IDs, and complete discovery blocks. No matches succeed with zero output bytes.
+
+`--file` selects logical source-relative files or subtrees: path `p` matches selector `s` only when `p == s` or `p` begins with `s + "/"`. Thus `internal/history` does not match `internal/history2`. Use canonical non-empty relative slash-separated paths without `.` or `..` elements. Selectors need not exist and are not resolved through the filesystem. `--root` selects the source boundary; `--out-dir` selects the workspace base; `--file` selects indexed logical paths independently of both locations, including in detached workspaces.
+
+`--kind` compares the stored kind exactly and case-sensitively, without aliases. Unknown kinds match nothing. `--name` matches any exact case-sensitive indexed name, including either name in a multi-name declaration. Nameless declarations do not match a supplied name filter. These selectors do not provide glob, regex, substring, fuzzy, semantic, or ranked search.
+
+Filtering selects existing indexed facts and does not regenerate or modify state. Missing, stale, and corrupt snapshots remain unusable. Choose actual IDs from the filtered results for `index show`, then analyze the retrieved source context.
 
 ## Source location and context
 

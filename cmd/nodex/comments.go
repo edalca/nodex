@@ -12,12 +12,18 @@ import (
 // The index is loaded through the index package. A missing index, a corrupt
 // index, and a stale index are errors. Nothing is regenerated. An empty
 // current index returns an empty string.
-func comments(dirs project.Locations) (string, error) {
+func comments(dirs project.Locations, filters discoveryFilters) (string, error) {
 	idx, _, _, err := openCurrentIndex(dirs)
 	if err != nil {
 		return "", err
 	}
-	return formatComments(idx.Entries()), nil
+	var selected []index.Entry
+	for _, entry := range idx.Entries() {
+		if filters.matchFile(entry.Path) {
+			selected = append(selected, entry)
+		}
+	}
+	return formatComments(selected), nil
 }
 
 // formatComments renders entries as compact Markdown.

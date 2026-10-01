@@ -6,7 +6,9 @@ import (
 	"io"
 )
 
-const indexUsage = "usage: nodex index generate|status|comments|declarations|show"
+const indexUsage = "usage: nodex index generate|status|comments|declarations|show\n" +
+	"  nodex index comments [--file <path> [<path>...]]\n" +
+	"  nodex index declarations [--file <path> [<path>...]] [--kind <kind> [<kind>...]] [--name <name> [<name>...]]"
 
 func dispatchIndex(inv invocation, args []string, getwd func() (string, error), stdout, stderr io.Writer) error {
 	if len(args) == 0 {
@@ -19,7 +21,15 @@ func dispatchIndex(inv invocation, args []string, getwd func() (string, error), 
 		fmt.Fprintf(stderr, "unknown index command %q\n", args[0])
 		return errors.New("usage")
 	}
-	if args[0] == "show" {
+	var filters discoveryFilters
+	if args[0] == "comments" || args[0] == "declarations" {
+		var err error
+		filters, err = parseDiscoveryFilters(args[0], args[1:])
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return errors.New("usage")
+		}
+	} else if args[0] == "show" {
 		if len(args) == 1 {
 			fmt.Fprintln(stderr, "index show requires an ID")
 			return errors.New("usage")
@@ -46,14 +56,14 @@ func dispatchIndex(inv invocation, args []string, getwd func() (string, error), 
 			nSources, countNoun(nSources, "source file", "source files"))
 		return nil
 	case "comments":
-		text, err := comments(dirs)
+		text, err := comments(dirs, filters)
 		if err != nil {
 			fmt.Fprintf(stderr, "nodex: %v\n", err)
 			return err
 		}
 		return writeStdout(stdout, stderr, text)
 	case "declarations":
-		text, err := declarations(dirs)
+		text, err := declarations(dirs, filters)
 		if err != nil {
 			fmt.Fprintf(stderr, "nodex: %v\n", err)
 			return err

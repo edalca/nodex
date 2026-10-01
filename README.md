@@ -123,8 +123,8 @@ The current command surface is:
 
 ```text
 nodex index generate
-nodex index comments
-nodex index declarations
+nodex index comments [--file <path> [<path>...]]
+nodex index declarations [--file <path> [<path>...]] [--kind <kind> [<kind>...]] [--name <name> [<name>...]]
 nodex index show <ID...>
 nodex index status
 nodex version
@@ -156,7 +156,7 @@ Example adds nothing.
 
 ### `index declarations`
 
-Prints every indexed declaration as compact Markdown.
+Prints indexed declarations as compact Markdown. Without filters, every declaration is included.
 
 Each entry contains only a declaration ID, its logical source-root-relative file path, its kind, its names, and either a comment ID or `doc: none`. Several names are written as `names: A, B`. A declaration with no name uses `names:` with nothing after it.
 
@@ -168,6 +168,30 @@ kind: function
 names: Example
 doc: C000001
 ```
+
+### Discovery filters
+
+Reduce discovery before retrieving source context:
+
+```bash
+nodex index comments \
+  --file internal/history internal/governance
+
+nodex index declarations \
+  --file internal/history \
+  --kind type method \
+  --name Service ProjectAuthority
+```
+
+Each filter may appear once and consumes one or more consecutive values until the next filter or the end of the command. Filters may appear in any order. Unsupported flags and missing values are usage errors. Duplicate values are harmless and deduplicated internally; use `--kind type method` rather than repeating `--kind`.
+
+Values within one filter use **OR**. Different filter categories use **AND**. Results keep the canonical index order and their existing IDs and Markdown blocks. No matches succeed with zero output bytes.
+
+`--file` selects an indexed logical source-relative file or subtree: a selector `s` matches a path `p` only when `p == s` or `p` begins with `s + "/"`. For example, `internal/history` includes its descendants but excludes `internal/history2`. Selectors must be canonical, non-empty relative slash-separated paths, without `.` or `..` elements. They are not resolved through the filesystem and need not exist. Globs, regexes, and substring matching have no special meaning.
+
+`--kind` compares the stored declaration kind exactly and case-sensitively, without aliases. Unknown kinds simply match nothing. `--name` compares each indexed name exactly and case-sensitively; any matching name selects the declaration. Declarations with no names do not match a name filter.
+
+`--root` selects the source project boundary, `--out-dir` selects the Nodex workspace base, and `--file` selects facts by logical source paths. File selectors have the same meaning in detached workspaces. Filtering uses the current index and does not regenerate or modify state; missing, stale, and corrupt indexes still fail.
 
 ### `index show`
 
@@ -329,9 +353,9 @@ The basic flow is:
 ```text
 index status
 index generate when needed
-index comments
-index declarations
+filtered index comments or index declarations
 index show
+analysis by the human or LLM
 ```
 
 Nodex does not run the skill itself. It copies the embedded skill file to the location expected by the selected agent.

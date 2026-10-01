@@ -46,7 +46,7 @@ func TestGenerateUsage(t *testing.T) {
 		}
 	}
 	stdout, stderr, err = runAt(root, "index")
-	if err == nil || stdout != "" || stderr != "usage: nodex index generate|status|comments|declarations|show\n" {
+	if err == nil || stdout != "" || stderr != indexUsage+"\n" {
 		t.Fatalf("index = %q %q %v", stdout, stderr, err)
 	}
 	stdout, stderr, err = runAt(root, "index", "generate", "extra")
@@ -58,7 +58,7 @@ func TestGenerateUsage(t *testing.T) {
 		t.Fatalf("--root = %q %q %v", stdout, stderr, err)
 	}
 	stdout, stderr, err = runAt(root, "index", "comments", "--root", root)
-	if err == nil || stdout != "" || stderr != "index comments takes no arguments\n" {
+	if err == nil || stdout != "" || stderr != "index comments: unsupported filter \"--root\"\n" {
 		t.Fatalf("comments --root = %q %q %v", stdout, stderr, err)
 	}
 	stdout, stderr, err = runAt(root, "index", "status", "extra")
@@ -66,7 +66,7 @@ func TestGenerateUsage(t *testing.T) {
 		t.Fatalf("status extra = %q %q %v", stdout, stderr, err)
 	}
 	stdout, stderr, err = runAt(root, "index", "declarations", "extra")
-	if err == nil || stdout != "" || stderr != "index declarations takes no arguments\n" {
+	if err == nil || stdout != "" || stderr != "index declarations: unexpected argument \"extra\"\n" {
 		t.Fatalf("declarations extra = %q %q %v", stdout, stderr, err)
 	}
 	stdout, stderr, err = runAt(root, "index", "show")
@@ -3317,5 +3317,240 @@ func TestDetachedBinary(t *testing.T) {
 		if _, err := os.Lstat(filepath.Join(dir, ".nodex")); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("unexpected state in %s", dir)
 		}
+	}
+}
+
+func TestDiscoveryFilters(t *testing.T) {
+	for _, mode := range []string{"local", "detached", "out-dir"} {
+		t.Run(mode, func(t *testing.T) {
+			source, workspace, cwd := t.TempDir(), t.TempDir(), t.TempDir()
+			files := map[string]string{
+				"internal/governance/g.go":     "// Governance\npackage p\ntype ProjectAuthority struct{}\nfunc Service() {}\ntype Other struct{}\n",
+				"internal/history-old/o.go":    "// Old\npackage p\ntype Service struct{}\n",
+				"internal/history/a.go":        "// History\npackage p\ntype Service struct { Other }\nfunc (s Service) ProjectAuthority() {}\nvar A, B int\nfunc ABC() {}\nfunc ParseA() {}\nfunc AValue() {}\n",
+				"internal/history/nested/b.go": "// Nested\npackage p\ntype ProjectAuthority struct{}\n",
+				"internal/history2/x.go":       "// Neighbor\npackage p\ntype Service struct{}\n",
+				"outside/o.go":                 "// Outside\npackage p\ntype Service struct{}\n",
+			}
+			for path, body := range files {
+				writeProjectFile(t, source, path, body)
+			}
+			var options []string
+			switch mode {
+			case "local":
+				cwd, workspace = source, source
+			case "detached":
+				cwd = workspace
+				options = []string{"--root", source}
+			case "out-dir":
+				options = []string{"--root", source, "--out-dir", workspace}
+			}
+			invoke := func(args ...string) string {
+				t.Helper()
+				return runOK(t, cwd, append(slices.Clone(options), append([]string{"index"}, args...)...)...)
+			}
+			invoke("generate")
+			before, tree := pairBytes(t, workspace), nodexTree(t, workspace)
+
+			commentFacts := []struct{ path, text string }{
+				{"internal/governance/g.go", "Governance"},
+				{"internal/history-old/o.go", "Old"},
+				{"internal/history/a.go", "History"},
+				{"internal/history/nested/b.go", "Nested"},
+				{"internal/history2/x.go", "Neighbor"},
+				{"outside/o.go", "Outside"},
+			}
+			wantComments := func(ordinals ...int) string {
+				var blocks []string
+				for _, n := range ordinals {
+					fact := commentFacts[n-1]
+					blocks = append(blocks, fmt.Sprintf("## C%06d\n\nfile: `%s`\n\n%s\n", n, fact.path, fact.text))
+				}
+				return strings.Join(blocks, "\n")
+			}
+			declarationFacts := []struct{ path, kind, names, doc string }{
+				{"internal/governance/g.go", "package", "p", "C000001"},
+				{"internal/governance/g.go", "type", "ProjectAuthority", "none"},
+				{"internal/governance/g.go", "function", "Service", "none"},
+				{"internal/governance/g.go", "type", "Other", "none"},
+				{"internal/history-old/o.go", "package", "p", "C000002"},
+				{"internal/history-old/o.go", "type", "Service", "none"},
+				{"internal/history/a.go", "package", "p", "C000003"},
+				{"internal/history/a.go", "type", "Service", "none"},
+				{"internal/history/a.go", "field", "", "none"},
+				{"internal/history/a.go", "method", "ProjectAuthority", "none"},
+				{"internal/history/a.go", "var", "A, B", "none"},
+				{"internal/history/a.go", "function", "ABC", "none"},
+				{"internal/history/a.go", "function", "ParseA", "none"},
+				{"internal/history/a.go", "function", "AValue", "none"},
+				{"internal/history/nested/b.go", "package", "p", "C000004"},
+				{"internal/history/nested/b.go", "type", "ProjectAuthority", "none"},
+				{"internal/history2/x.go", "package", "p", "C000005"},
+				{"internal/history2/x.go", "type", "Service", "none"},
+				{"outside/o.go", "package", "p", "C000006"},
+				{"outside/o.go", "type", "Service", "none"},
+			}
+			wantDeclarations := func(ordinals ...int) string {
+				var blocks []string
+				for _, n := range ordinals {
+					fact := declarationFacts[n-1]
+					names := "names:"
+					if fact.names != "" {
+						names += " " + fact.names
+					}
+					blocks = append(blocks, fmt.Sprintf("## D%06d\n\nfile: `%s`\nkind: %s\n%s\ndoc: %s\n", n, fact.path, fact.kind, names, fact.doc))
+				}
+				return strings.Join(blocks, "\n")
+			}
+			for _, tc := range []struct {
+				name string
+				args []string
+				want string
+			}{
+				{"unfiltered comments", []string{"comments"}, wantComments(1, 2, 3, 4, 5, 6)},
+				{"unfiltered declarations", []string{"declarations"}, wantDeclarations(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)},
+				{"exact file", []string{"comments", "--file", "internal/history/a.go"}, wantComments(3)},
+				{"subtree and boundaries", []string{"comments", "--file", "internal/history"}, wantComments(3, 4)},
+				{"file OR stable order", []string{"comments", "--file", "internal/history", "internal/governance"}, wantComments(1, 3, 4)},
+				{"duplicate files", []string{"comments", "--file", "internal/history", "internal/history", "internal/governance", "internal/history"}, wantComments(1, 3, 4)},
+				{"overlapping files", []string{"comments", "--file", "internal/history/a.go", "internal/history"}, wantComments(3, 4)},
+				{"nonexistent file", []string{"comments", "--file", "missing/file.go"}, ""},
+				{"literal glob", []string{"comments", "--file", "*.go", "internal/**", "history"}, ""},
+				{"file case", []string{"comments", "--file", "internal/History"}, ""},
+				{"declaration file", []string{"declarations", "--file", "internal/history/a.go"}, wantDeclarations(7, 8, 9, 10, 11, 12, 13, 14)},
+				{"declaration subtree", []string{"declarations", "--file", "internal/history"}, wantDeclarations(7, 8, 9, 10, 11, 12, 13, 14, 15, 16)},
+				{"kind", []string{"declarations", "--kind", "method"}, wantDeclarations(10)},
+				{"kind OR", []string{"declarations", "--kind", "type", "method"}, wantDeclarations(2, 4, 6, 8, 10, 16, 18, 20)},
+				{"duplicate kinds", []string{"declarations", "--kind", "type", "type", "method", "type"}, wantDeclarations(2, 4, 6, 8, 10, 16, 18, 20)},
+				{"unknown kind", []string{"declarations", "--kind", "future-kind"}, ""},
+				{"kind case and no aliases", []string{"declarations", "--kind", "Type", "func", "struct", "interface"}, ""},
+				{"no comma syntax", []string{"declarations", "--kind", "type,method"}, ""},
+				{"name exact no substrings", []string{"declarations", "--name", "A"}, wantDeclarations(11)},
+				{"second indexed name", []string{"declarations", "--name", "B"}, wantDeclarations(11)},
+				{"name OR", []string{"declarations", "--name", "Service", "ProjectAuthority"}, wantDeclarations(2, 3, 6, 8, 10, 16, 18, 20)},
+				{"duplicate names", []string{"declarations", "--name", "Service", "ProjectAuthority", "Service", "ProjectAuthority"}, wantDeclarations(2, 3, 6, 8, 10, 16, 18, 20)},
+				{"two matching names one fact", []string{"declarations", "--name", "B", "A", "B"}, wantDeclarations(11)},
+				{"name case", []string{"declarations", "--name", "service"}, ""},
+				{"name no match", []string{"declarations", "--name", "DoesNotExist"}, ""},
+				{"nameless visible", []string{"declarations", "--kind", "field"}, wantDeclarations(9)},
+				{"nameless rejected by name", []string{"declarations", "--kind", "field", "--name", "Other"}, ""},
+				{"combined AND", []string{"declarations", "--file", "internal/history", "internal/governance", "--kind", "type", "method", "--name", "Service", "ProjectAuthority"}, wantDeclarations(2, 8, 10, 16)},
+				{"equivalent flag and value order", []string{"declarations", "--name", "ProjectAuthority", "Service", "--kind", "method", "type", "--file", "internal/governance", "internal/history"}, wantDeclarations(2, 8, 10, 16)},
+				{"duplicates across categories", []string{"declarations", "--file", "internal/history", "internal/governance", "internal/history", "--kind", "type", "type", "method", "--name", "Service", "ProjectAuthority", "Service"}, wantDeclarations(2, 8, 10, 16)},
+				{"nonexistent declaration file", []string{"declarations", "--file", "missing/file.go"}, ""},
+				{"equals single value", []string{"declarations", "--kind=type", "method", "--name=ProjectAuthority"}, wantDeclarations(2, 10, 16)},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					if got := invoke(tc.args...); got != tc.want {
+						t.Fatalf("%v = %q\nwant %q", tc.args, got, tc.want)
+					}
+				})
+			}
+			shown := invoke("show", "D000010")
+			const wantShow = "## D000010\n\nfile: `internal/history/a.go`\nlines: 4\nkind: method\nnames: ProjectAuthority\ndoc: none\n\n### Context\n\n```go\nfunc (s Service) ProjectAuthority() {}\n```\n"
+			if shown != wantShow {
+				t.Fatalf("show = %q, want %q", shown, wantShow)
+			}
+			requireSameIndex(t, workspace, before)
+			if !slices.Equal(nodexTree(t, workspace), tree) {
+				t.Fatal("discovery changed workspace tree")
+			}
+			if mode != "local" {
+				if _, err := os.Stat(filepath.Join(source, ".nodex")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("detached discovery created source state")
+				}
+			}
+		})
+	}
+}
+
+func TestDiscoveryFilterUsage(t *testing.T) {
+	for _, command := range []string{"comments", "declarations"} {
+		cases := [][]string{
+			{"extra"}, {"--file"}, {"--file", ""},
+			{"--file", "A", "--file", "B"}, {"--file=A", "--file=B"},
+			{"--file", "/absolute/path"}, {"--file", "../internal/history"},
+			{"--file", "internal/../../other"}, {"--file", "internal/../history"},
+			{"--file", "."}, {"--file", "./internal/history"},
+			{"--file", "internal//history"}, {"--file", "internal/history/"},
+			{"--file", `internal\history`}, {"--file", "bad\x00path"},
+			{"--file", string([]byte{0xff})},
+			{"--file", "internal/history", "--package", "history"},
+			{"--root", "source"}, {"--out-dir", "workspace"}, {"-x"},
+		}
+		for _, flag := range []string{"--package", "--language", "--text", "--contains", "--regex", "--glob", "--prefix", "--doc", "--documented", "--undocumented", "--limit", "--offset"} {
+			cases = append(cases, []string{flag, "value"})
+		}
+		if command == "comments" {
+			cases = append(cases, []string{"--kind", "type"}, []string{"--name", "Service"}, []string{"--file", "A", "--kind", "type"})
+		} else {
+			cases = append(cases, []string{"--kind"}, []string{"--name"}, []string{"--kind", "--name", "A"}, []string{"--file", "--kind", "type"},
+				[]string{"--kind", "type", "--kind", "method"}, []string{"--name", "A", "--name", "B"}, []string{"--kind="}, []string{"--name", ""})
+		}
+		for _, args := range cases {
+			t.Run(command+" "+strings.Join(args, " "), func(t *testing.T) {
+				root := t.TempDir()
+				var out, errOut bytes.Buffer
+				opened := false
+				err := run(append([]string{"index", command}, args...), func() (string, error) {
+					opened = true
+					return root, nil
+				}, &out, &errOut)
+				if err == nil || err.Error() != "usage" || out.Len() != 0 || errOut.Len() == 0 || opened {
+					t.Fatalf("usage = %q %q %v, opened=%v", out.String(), errOut.String(), err, opened)
+				}
+				entries, err := os.ReadDir(root)
+				if err != nil || len(entries) != 0 {
+					t.Fatalf("usage changed filesystem: %v %v", entries, err)
+				}
+			})
+		}
+	}
+	filters, err := parseDiscoveryFilters("declarations", []string{"--file", "B", "A", "B", "--kind", "method", "type", "method", "--name", "Z", "A", "Z"})
+	if err != nil || !slices.Equal(filters.files, []string{"B", "A"}) || !slices.Equal(filters.kinds, []string{"method", "type"}) || !slices.Equal(filters.names, []string{"Z", "A"}) {
+		t.Fatalf("normalized selectors = %+v, %v", filters, err)
+	}
+}
+
+func TestFilteredDiscoveryLifecycle(t *testing.T) {
+	for _, state := range []string{"missing", "stale", "corrupt"} {
+		t.Run(state, func(t *testing.T) {
+			root := t.TempDir()
+			writeProjectFile(t, root, "a.go", "// hello\npackage p\n")
+			var before []byte
+			var tree []string
+			if state != "missing" {
+				generateOK(t, root)
+				if state == "stale" {
+					writeProjectFile(t, root, "a.go", "// changed\npackage p\n")
+				} else {
+					writeProjectFile(t, root, index.DeclarationsPath, "corrupt\n")
+				}
+				before, tree = pairBytes(t, root), nodexTree(t, root)
+			}
+			for _, args := range [][]string{
+				{"comments", "--file", "nonexistent"},
+				{"declarations", "--file", "nonexistent", "--kind", "future-kind", "--name", "DoesNotExist"},
+			} {
+				stdout, stderr, err := runAt(root, append([]string{"index"}, args...)...)
+				message := state
+				if state == "missing" {
+					message = "no generated index"
+				}
+				if err == nil || stdout != "" || !strings.Contains(stderr, message) {
+					t.Fatalf("%v = %q %q %v", args, stdout, stderr, err)
+				}
+			}
+			if state == "missing" {
+				if _, err := os.Stat(filepath.Join(root, ".nodex")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("missing discovery created state")
+				}
+			} else {
+				requireSameIndex(t, root, before)
+				if !slices.Equal(nodexTree(t, root), tree) {
+					t.Fatal("failed discovery changed state tree")
+				}
+			}
+		})
 	}
 }
