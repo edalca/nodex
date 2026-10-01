@@ -1,7 +1,5 @@
 # Nodex
 
-**0.1.0-beta.1**
-
 Nodex helps you review the comments in a codebase, and see which declarations have a documentation comment attached directly to them, without having to scan the whole repository yourself.
 
 It finds the comments that actually belong to the source code, gives each one a simple ID, and lets you jump back to the relevant code when you need more context. It can also list declarations and say whether each one has a directly attached documentation comment.

@@ -1523,9 +1523,6 @@ func snippetLineCount(text string) int {
 
 func TestVersion(t *testing.T) {
 	root := t.TempDir()
-	if got, want := version, "0.1.0-beta.2"; got != want {
-		t.Fatalf("version = %q, want %q", got, want)
-	}
 	if commit != "unknown" || buildDate != "unknown" {
 		t.Fatalf("defaults = %q %q", commit, buildDate)
 	}
