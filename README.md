@@ -2,18 +2,20 @@
 
 **0.1.0-beta.1**
 
-Nodex helps you review the comments in a codebase without having to scan the whole repository yourself.
+Nodex helps you review the comments in a codebase, and see which declarations have a documentation comment attached directly to them, without having to scan the whole repository yourself.
 
-It finds the comments that actually belong to the source code, gives each one a simple ID, and lets you jump back to the relevant code when you need more context.
+It finds the comments that actually belong to the source code, gives each one a simple ID, and lets you jump back to the relevant code when you need more context. It can also list declarations and say whether each one has a directly attached documentation comment.
 
 ```text
-Nodex finds, organizes, and locates comments.
+Nodex finds, organizes, and locates comments and declarations.
 You or the LLM decide what they mean.
 ```
 
-Nodex does not try to interpret comments for you. It does not decide whether a comment is correct, outdated, useful, misleading, or worth changing.
+Nodex does not try to interpret comments for you. It does not decide whether a comment is correct, outdated, useful, misleading, or worth changing. It also does not decide that a declaration needs a documentation comment.
 
-Its job is to find the comments and show you where they are. The analysis is left to you or the LLM.
+Nodex can show which declarations have a directly attached documentation comment and which do not. It reports that structure; you or the LLM decide whether anything needs to change.
+
+Its job is to find the comments and declarations and show you where they are. The analysis is left to you or the LLM.
 
 This beta currently includes support for Go source files.
 
@@ -28,55 +30,68 @@ go build -o nodex ./cmd/nodex
 Then, from a project:
 
 ```bash
-nodex generate
-nodex comments
-nodex show C000001
+nodex index generate
+nodex index comments
+nodex index declarations
+nodex index show C000001
 ```
 
-`generate` scans the project and builds the comment index.
+`index generate` scans the project and builds the index.
 
-`comments` gives you the list of indexed comments with their IDs.
+`index comments` gives you the list of indexed comments with their IDs and normalized text.
 
-`show` takes an ID and shows you where that comment came from, together with the surrounding code.
+`index declarations` gives you each declaration's kind, names, and the ID of its directly attached documentation comment, or `doc: none` when there is none.
+
+`index show` takes a comment ID or a declaration ID and shows you where it came from, together with the surrounding code.
 
 A normal workflow looks like this:
 
 ```bash
-nodex status
-nodex generate
-nodex comments
-nodex show C000001
+nodex index status
+nodex index generate
+nodex index comments
+nodex index declarations
+nodex index show C000001
 ```
 
-Use `status` whenever the project may have changed. If the index is missing or out of date, run `generate` again before using existing comment IDs.
+Use `index status` whenever the project may have changed. If the index is missing or out of date, run `index generate` again before using existing IDs.
 
 ## Why Nodex exists
 
-Comments are useful context for understanding a codebase, but finding and reviewing all of them can be noisy and repetitive.
+Comments are useful context for understanding a codebase, but finding and reviewing all of them can be noisy and repetitive. Seeing which declarations have a documentation comment attached to them usually means walking the syntax tree again.
 
-Nodex gives you a small, predictable way to work with them.
+Nodex gives you a small, predictable way to work with both.
 
 Instead of asking an LLM to search through the whole repository for comments, you can first generate an index:
 
 ```bash
-nodex generate
+nodex index generate
 ```
 
 Then get the comments:
 
 ```bash
-nodex comments
+nodex index comments
+```
+
+The declaration facts:
+
+```bash
+nodex index declarations
 ```
 
 And when one of them needs a closer look:
 
 ```bash
-nodex show C000001
+nodex index show C000001
+nodex index show D000001
 ```
+
+`index comments` is the compact normalized comment text. `index declarations` is the compact list of declarations and their direct documentation links. `index show` is the source location and a bounded piece of the original source. The show result for a comment does not print the normalized comment a second time, and the show result for a declaration does not print the documentation comment as a separate copy.
 
 This keeps the first pass simple and lets you fetch source context only when it is actually useful.
 
-## Comment IDs
+## Comment and declaration IDs
 
 Each indexed comment gets an ID such as:
 
@@ -86,49 +101,66 @@ C000002
 C000003
 ```
 
+Each indexed declaration gets an ID such as:
+
+```text
+D000001
+D000002
+D000003
+```
+
 The IDs are predictable inside one generated index, but they are not permanent.
 
-If the source changes and you run `nodex generate` again, a comment may receive a different ID.
+If the source changes and you run `nodex index generate` again, a comment or declaration may receive a different ID.
 
 Think of the IDs as short references for the current snapshot of the project.
+
+`doc: none` on a declaration means only that no documentation comment is attached directly to that declaration. It does not mean the declaration is wrong or that a comment should be added.
 
 ## Commands
 
 The current command surface is:
 
 ```text
-nodex generate
-nodex comments
-nodex show <ID...>
-nodex status
+nodex index generate
+nodex index comments
+nodex index declarations
+nodex index show <ID...>
+nodex index status
 nodex version
 nodex ignore ...
 nodex skill ...
 ```
 
-### `generate`
+### `index generate`
 
-Scans the project and writes the comment index under:
+Scans the project and writes the index under:
 
 ```text
 .nodex/index/
 ```
 
-### `comments`
+### `index comments`
 
 Prints the current comments as compact Markdown.
 
 Each entry contains a comment ID and its normalized text.
 
-### `show`
+### `index declarations`
 
-Shows one or more comments together with their source location and nearby code.
+Prints every indexed declaration as compact Markdown.
+
+Each entry contains a declaration ID, its kind, its names, and either a comment ID or `doc: none`. Several names are written as `names: A, B`. A declaration with no name uses `names:` with nothing after it.
+
+### `index show`
+
+Shows one or more comments or declarations together with their source location and nearby code.
 
 ```bash
-nodex show C000001 C000004
+nodex index show C000001 D000004
 ```
 
-### `status`
+### `index status`
 
 Shows whether the current index is:
 
@@ -139,7 +171,7 @@ stale
 corrupt
 ```
 
-`status` only checks the project. It does not change anything.
+`index status` only checks the project. It does not change anything.
 
 ### `version`
 
@@ -165,7 +197,7 @@ It does not use files such as `go.mod` or `go.work` to decide where the project 
 You can choose the project root yourself:
 
 ```bash
-nodex --root /path/to/project status
+nodex --root /path/to/project index status
 ```
 
 `--root` must appear before the command.
@@ -228,7 +260,7 @@ The shortcut itself is not stored in `.nodex/ignore.json`; the concrete preset I
 
 Manual path patterns from `.nodex/ignore.json` are applied together with enabled presets.
 
-Changing ignore settings does not automatically rebuild the index. Use `nodex status` to check whether a new `generate` is needed.
+Changing ignore settings does not automatically rebuild the index. Use `nodex index status` to check whether a new `index generate` is needed.
 
 ## Agent skill
 
@@ -237,10 +269,11 @@ Nodex includes a provider-neutral Agent Skill that teaches coding agents how to 
 The basic flow is:
 
 ```text
-status
-generate when needed
-comments
-show
+index status
+index generate when needed
+index comments
+index declarations
+index show
 ```
 
 Nodex does not run the skill itself. It copies the embedded skill file to the location expected by the selected agent.

@@ -35,28 +35,46 @@ func TestMain(m *testing.M) {
 func TestGenerateUsage(t *testing.T) {
 	root := t.TempDir()
 	stdout, stderr, err := runAt(root)
-	if err == nil || stdout != "" || stderr != "usage: nodex [--root <path>] generate|comments|status|show|version|ignore|skill\n" {
+	if err == nil || stdout != "" || stderr != "usage: nodex [--root <path>] index|version|ignore|skill\n" {
 		t.Fatalf("no args = %q %q %v", stdout, stderr, err)
 	}
-	stdout, stderr, err = runAt(root, "generate", "extra")
-	if err == nil || stdout != "" || stderr != "generate takes no arguments\n" {
+	for _, command := range []string{"generate", "comments", "status", "show"} {
+		stdout, stderr, err = runAt(root, command)
+		if err == nil || stdout != "" || stderr != fmt.Sprintf("unknown command %q\n", command) {
+			t.Fatalf("legacy %s = %q %q %v", command, stdout, stderr, err)
+		}
+	}
+	stdout, stderr, err = runAt(root, "index")
+	if err == nil || stdout != "" || stderr != "usage: nodex index generate|status|comments|declarations|show\n" {
+		t.Fatalf("index = %q %q %v", stdout, stderr, err)
+	}
+	stdout, stderr, err = runAt(root, "index", "generate", "extra")
+	if err == nil || stdout != "" || stderr != "index generate takes no arguments\n" {
 		t.Fatalf("extra = %q %q %v", stdout, stderr, err)
 	}
-	stdout, stderr, err = runAt(root, "generate", "--root", root)
-	if err == nil || stdout != "" || strings.Contains(stdout, "generated") {
+	stdout, stderr, err = runAt(root, "index", "generate", "--root", root)
+	if err == nil || stdout != "" || stderr != "index generate takes no arguments\n" {
 		t.Fatalf("--root = %q %q %v", stdout, stderr, err)
 	}
-	stdout, stderr, err = runAt(root, "comments", "--root", root)
-	if err == nil || stdout != "" || stderr != "comments takes no arguments\n" {
+	stdout, stderr, err = runAt(root, "index", "comments", "--root", root)
+	if err == nil || stdout != "" || stderr != "index comments takes no arguments\n" {
 		t.Fatalf("comments --root = %q %q %v", stdout, stderr, err)
 	}
-	stdout, stderr, err = runAt(root, "status", "extra")
-	if err == nil || stdout != "" || stderr != "status takes no arguments\n" {
+	stdout, stderr, err = runAt(root, "index", "status", "extra")
+	if err == nil || stdout != "" || stderr != "index status takes no arguments\n" {
 		t.Fatalf("status extra = %q %q %v", stdout, stderr, err)
 	}
-	stdout, stderr, err = runAt(root, "show")
-	if err == nil || stdout != "" || stderr != "show requires a comment ID\n" {
+	stdout, stderr, err = runAt(root, "index", "declarations", "extra")
+	if err == nil || stdout != "" || stderr != "index declarations takes no arguments\n" {
+		t.Fatalf("declarations extra = %q %q %v", stdout, stderr, err)
+	}
+	stdout, stderr, err = runAt(root, "index", "show")
+	if err == nil || stdout != "" || stderr != "index show requires an ID\n" {
 		t.Fatalf("show without ID = %q %q %v", stdout, stderr, err)
+	}
+	stdout, stderr, err = runAt(root, "index", "nope")
+	if err == nil || stdout != "" || stderr != "unknown index command \"nope\"\n" {
+		t.Fatalf("unknown index = %q %q %v", stdout, stderr, err)
 	}
 	stdout, stderr, err = runAt(root, "version")
 	if err != nil || stdout != defaultVersionOutput || stderr != "" {
@@ -71,7 +89,7 @@ func TestGenerateUsage(t *testing.T) {
 		t.Fatalf("unknown = %q %q %v", stdout, stderr, err)
 	}
 	var out, errOut bytes.Buffer
-	err = run([]string{"generate"}, func() (string, error) {
+	err = run([]string{"index", "generate"}, func() (string, error) {
 		return "", errors.New("no working directory")
 	}, &out, &errOut)
 	if err == nil || out.Len() != 0 || !strings.Contains(errOut.String(), "no working directory") {
@@ -82,28 +100,28 @@ func TestGenerateUsage(t *testing.T) {
 func TestGenerateReportsCounts(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		root := t.TempDir()
-		if got := generateOK(t, root); got != "generated 0 comments from 0 source files\n" {
+		if got := generateOK(t, root); got != "generated 0 comments and 0 declarations from 0 source files\n" {
 			t.Fatalf("stdout = %q", got)
 		}
 	})
 	t.Run("one", func(t *testing.T) {
 		root := t.TempDir()
 		writeProjectFile(t, root, "a.go", "// alpha\n\npackage a\n")
-		if got := generateOK(t, root); got != "generated 1 comment from 1 source file\n" {
+		if got := generateOK(t, root); got != "generated 1 comment and 1 declaration from 1 source file\n" {
 			t.Fatalf("stdout = %q", got)
 		}
 	})
 	t.Run("many comments one file", func(t *testing.T) {
 		root := t.TempDir()
 		writeProjectFile(t, root, "a.go", "// beta\n\n// gamma\npackage a\n")
-		if got := generateOK(t, root); got != "generated 2 comments from 1 source file\n" {
+		if got := generateOK(t, root); got != "generated 2 comments and 1 declaration from 1 source file\n" {
 			t.Fatalf("stdout = %q", got)
 		}
 	})
 	t.Run("source without comments", func(t *testing.T) {
 		root := t.TempDir()
 		writeProjectFile(t, root, "a.go", "package a\n")
-		if got := generateOK(t, root); got != "generated 0 comments from 1 source file\n" {
+		if got := generateOK(t, root); got != "generated 0 comments and 1 declaration from 1 source file\n" {
 			t.Fatalf("stdout = %q", got)
 		}
 	})
@@ -112,7 +130,7 @@ func TestGenerateReportsCounts(t *testing.T) {
 		writeProjectFile(t, root, "a.go", "// alpha\n\npackage a\n")
 		writeProjectFile(t, root, "b.go", "// beta\n\npackage b\n")
 		writeProjectFile(t, root, "README.md", "package { not go\n")
-		if got := generateOK(t, root); got != "generated 2 comments from 2 source files\n" {
+		if got := generateOK(t, root); got != "generated 2 comments and 2 declarations from 2 source files\n" {
 			t.Fatalf("stdout = %q", got)
 		}
 		_, snap := loadIndex(t, root)
@@ -160,7 +178,7 @@ func TestGenerateSelectsSupportedSource(t *testing.T) {
 	if !slices.Contains(texts, "a_test.go:test comment") {
 		t.Fatalf("test comment missing: %q", texts)
 	}
-	if tree := nodexTree(t, root); !slices.Equal(tree, []string{"index", "index/comments.jsonl", "index/snapshot.json"}) {
+	if tree := nodexTree(t, root); !slices.Equal(tree, []string{"index", "index/comments.jsonl", "index/declarations.jsonl", "index/snapshot.json"}) {
 		t.Fatalf(".nodex = %q", tree)
 	}
 	if _, err := os.Stat(filepath.Join(resolvedRoot(t, root), filepath.FromSlash(ignore.DocumentPath))); !errors.Is(err, os.ErrNotExist) {
@@ -191,6 +209,7 @@ func TestGenerateAppliesIgnorePolicy(t *testing.T) {
 		"ignore.json",
 		"index",
 		"index/comments.jsonl",
+		"index/declarations.jsonl",
 		"index/snapshot.json",
 	}) {
 		t.Fatalf(".nodex = %q", tree)
@@ -254,7 +273,7 @@ func TestGenerateIgnoresMalformedExcludedAndUnsupported(t *testing.T) {
 	if err := os.Chmod(filepath.Join(root, "README.md"), 0); err != nil {
 		t.Fatalf("chmod: %v", err)
 	}
-	if got := generateOK(t, root); got != "generated 1 comment from 1 source file\n" {
+	if got := generateOK(t, root); got != "generated 1 comment and 1 declaration from 1 source file\n" {
 		t.Fatalf("stdout = %q", got)
 	}
 	_, snap := loadIndex(t, root)
@@ -468,7 +487,7 @@ func runAt(root string, args ...string) (string, string, error) {
 
 func generateOK(t *testing.T, root string) string {
 	t.Helper()
-	stdout, stderr, err := runAt(root, "generate")
+	stdout, stderr, err := runAt(root, "index", "generate")
 	if err != nil {
 		t.Fatalf("generate: %v\n%s", err, stderr)
 	}
@@ -483,7 +502,7 @@ func generateOK(t *testing.T, root string) string {
 
 func generateFail(t *testing.T, root string) string {
 	t.Helper()
-	stdout, stderr, err := runAt(root, "generate")
+	stdout, stderr, err := runAt(root, "index", "generate")
 	if err == nil {
 		t.Fatal("generate succeeded")
 	}
@@ -546,6 +565,7 @@ func pairBytes(t *testing.T, dir string) []byte {
 	return bytes.Join([][]byte{
 		readGen(t, dir, index.SnapshotPath),
 		readGen(t, dir, index.CommentsPath),
+		readGen(t, dir, index.DeclarationsPath),
 	}, []byte{0})
 }
 
@@ -642,8 +662,8 @@ func TestCommentsOutput(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		root := t.TempDir()
 		writeProjectFile(t, root, "a.go", "// hello\n\npackage a\n")
-		stdout, stderr, err := runAt(root, "comments")
-		if err == nil || stdout != "" || stderr != "nodex: no generated index; run nodex generate\n" {
+		stdout, stderr, err := runAt(root, "index", "comments")
+		if err == nil || stdout != "" || stderr != "nodex: no generated index; run nodex index generate\n" {
 			t.Fatalf("missing = %q %q %v", stdout, stderr, err)
 		}
 		if _, statErr := os.Stat(filepath.Join(resolvedRoot(t, root), ".nodex")); !errors.Is(statErr, os.ErrNotExist) {
@@ -762,7 +782,7 @@ func TestCommentsRejectsCorrupt(t *testing.T) {
 		t.Fatalf("write comments: %v", err)
 	}
 	before := readFile(t, commentsPath)
-	stdout, stderr, err := runAt(root, "comments")
+	stdout, stderr, err := runAt(root, "index", "comments")
 	if err == nil || stdout != "" || !strings.Contains(stderr, "corrupt") {
 		t.Fatalf("corrupt = %q %q %v", stdout, stderr, err)
 	}
@@ -829,8 +849,8 @@ func TestSnapshotCurrentness(t *testing.T) {
 		writeProjectFile(t, root, "a.go", "package {\n")
 		assertStalePair(t, root, statusStale(1, 1, 1))
 		requireSameIndex(t, root, before)
-		stdout, stderr, err := runAt(root, "comments")
-		if err == nil || stdout != "" || stderr != "nodex: index is stale; run nodex generate\n" {
+		stdout, stderr, err := runAt(root, "index", "comments")
+		if err == nil || stdout != "" || stderr != "nodex: index is stale; run nodex index generate\n" {
 			t.Fatalf("malformed comments = %q %q %v", stdout, stderr, err)
 		}
 		if strings.Contains(stderr, "expected") || strings.Contains(stderr, "syntax") {
@@ -876,7 +896,7 @@ func TestStatusReportsMissingAndCorrupt(t *testing.T) {
 		if tree := nodexTree(t, root); !slices.Equal(tree, []string{"ignore.json"}) {
 			t.Fatalf(".nodex = %q", tree)
 		}
-		stdout, stderr, err := runAt(root, "comments")
+		stdout, stderr, err := runAt(root, "index", "comments")
 		if err == nil || stdout != "" {
 			t.Fatalf("comments = %q %q %v", stdout, stderr, err)
 		}
@@ -954,7 +974,7 @@ func TestStatusOperationalFailures(t *testing.T) {
 		root := t.TempDir()
 		writeProjectFile(t, root, "a.go", "// alpha\n\npackage a\n")
 		writeProjectFile(t, root, ignore.DocumentPath, "{")
-		stdout, stderr, err := runAt(root, "status")
+		stdout, stderr, err := runAt(root, "index", "status")
 		if err == nil || stdout != "" || !strings.Contains(stderr, "nodex: ") {
 			t.Fatalf("status = %q %q %v", stdout, stderr, err)
 		}
@@ -964,7 +984,7 @@ func TestStatusOperationalFailures(t *testing.T) {
 		if _, statErr := os.Stat(filepath.Join(resolvedRoot(t, root), filepath.FromSlash(index.IndexDir))); !errors.Is(statErr, os.ErrNotExist) {
 			t.Fatalf("index dir stat = %v", statErr)
 		}
-		stdout, stderr, err = runAt(root, "comments")
+		stdout, stderr, err = runAt(root, "index", "comments")
 		if err == nil || stdout != "" {
 			t.Fatalf("comments = %q %q %v", stdout, stderr, err)
 		}
@@ -980,7 +1000,7 @@ func TestStatusOperationalFailures(t *testing.T) {
 			t.Fatalf("chmod: %v", err)
 		}
 		before := pairBytes(t, root)
-		stdout, stderr, err := runAt(root, "status")
+		stdout, stderr, err := runAt(root, "index", "status")
 		if err == nil || stdout != "" || !strings.Contains(stderr, "nodex: ") {
 			t.Fatalf("status = %q %q %v", stdout, stderr, err)
 		}
@@ -995,7 +1015,7 @@ func TestStatusOperationalFailures(t *testing.T) {
 		}
 		before := pairBytes(t, root)
 		for _, command := range []string{"status", "comments"} {
-			stdout, stderr, err := runAt(root, command)
+			stdout, stderr, err := runAt(root, "index", command)
 			if err == nil || stdout != "" || !strings.Contains(stderr, "nodex: ") {
 				t.Fatalf("%s = %q %q %v", command, stdout, stderr, err)
 			}
@@ -1015,7 +1035,7 @@ func TestStatusOperationalFailures(t *testing.T) {
 		if err := os.Chmod(path, 0); err != nil {
 			t.Fatalf("chmod: %v", err)
 		}
-		stdout, stderr, err := runAt(root, "status")
+		stdout, stderr, err := runAt(root, "index", "status")
 		if err == nil || stdout != "" {
 			t.Fatalf("status = %q %q %v", stdout, stderr, err)
 		}
@@ -1034,7 +1054,7 @@ func TestCommandsDoNotFollowNodexSymlink(t *testing.T) {
 			if err := os.Symlink(outside, filepath.Join(root, ".nodex")); err != nil {
 				t.Fatalf("symlink: %v", err)
 			}
-			stdout, stderr, err := runAt(root, command)
+			stdout, stderr, err := runAt(root, "index", command)
 			if err == nil || stdout != "" || !strings.Contains(stderr, "nodex: ") {
 				t.Fatalf("%s = %q %q %v", command, stdout, stderr, err)
 			}
@@ -1047,7 +1067,7 @@ func TestCommandsDoNotFollowNodexSymlink(t *testing.T) {
 
 func commandOK(t *testing.T, root, command string) string {
 	t.Helper()
-	stdout, stderr, err := runAt(root, command)
+	stdout, stderr, err := runAt(root, "index", command)
 	if err != nil {
 		t.Fatalf("%s: %v\n%s", command, err, stderr)
 	}
@@ -1067,8 +1087,8 @@ func oneCommentProject(t *testing.T) string {
 
 func assertStaleComments(t *testing.T, root string) {
 	t.Helper()
-	stdout, stderr, err := runAt(root, "comments")
-	if err == nil || stdout != "" || stderr != "nodex: index is stale; run nodex generate\n" {
+	stdout, stderr, err := runAt(root, "index", "comments")
+	if err == nil || stdout != "" || stderr != "nodex: index is stale; run nodex index generate\n" {
 		t.Fatalf("comments = %q %q %v", stdout, stderr, err)
 	}
 }
@@ -1109,8 +1129,8 @@ func TestShow(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		root := t.TempDir()
 		writeProjectFile(t, root, "a.go", "package a\n\n// hello\nfunc F() {}\n")
-		stdout, stderr, err := runAt(root, "show", "C000001")
-		if err == nil || stdout != "" || stderr != "nodex: no generated index; run nodex generate\n" {
+		stdout, stderr, err := runAt(root, "index", "show", "C000001")
+		if err == nil || stdout != "" || stderr != "nodex: no generated index; run nodex index generate\n" {
 			t.Fatalf("missing = %q %q %v", stdout, stderr, err)
 		}
 		if _, statErr := os.Stat(filepath.Join(resolvedRoot(t, root), ".nodex")); !errors.Is(statErr, os.ErrNotExist) {
@@ -1129,7 +1149,7 @@ func TestShow(t *testing.T) {
 			t.Fatalf("write comments: %v", err)
 		}
 		before := readFile(t, commentsPath)
-		stdout, stderr, err := runAt(root, "show", "C000001")
+		stdout, stderr, err := runAt(root, "index", "show", "C000001")
 		if err == nil || stdout != "" || !strings.Contains(stderr, "corrupt") {
 			t.Fatalf("corrupt = %q %q %v", stdout, stderr, err)
 		}
@@ -1147,8 +1167,8 @@ func TestShow(t *testing.T) {
 		generateOK(t, root)
 		before := pairBytes(t, root)
 		writeProjectFile(t, root, "a.go", "package a\n\n// changed\nfunc F() {}\n")
-		stdout, stderr, err := runAt(root, "show", "C000001")
-		if err == nil || stdout != "" || stderr != "nodex: index is stale; run nodex generate\n" {
+		stdout, stderr, err := runAt(root, "index", "show", "C000001")
+		if err == nil || stdout != "" || stderr != "nodex: index is stale; run nodex index generate\n" {
 			t.Fatalf("stale = %q %q %v", stdout, stderr, err)
 		}
 		if strings.Contains(stdout, "changed") || strings.Contains(stdout, "hello") {
@@ -1163,13 +1183,13 @@ func TestShow(t *testing.T) {
 		generateOK(t, root)
 		before := pairBytes(t, root)
 		for _, args := range [][]string{
-			{"show", "nope"},
-			{"show", "c000001"},
-			{"show", "C000000"},
-			{"show", "C000001", "nope"},
-			{"show", "nope", "C000001"},
-			{"show", "C000001", "C000099"},
-			{"show", "C000099", "C000001"},
+			{"index", "show", "nope"},
+			{"index", "show", "c000001"},
+			{"index", "show", "C000000"},
+			{"index", "show", "C000001", "nope"},
+			{"index", "show", "nope", "C000001"},
+			{"index", "show", "C000001", "C000099"},
+			{"index", "show", "C000099", "C000001"},
 		} {
 			stdout, stderr, err := runAt(root, args...)
 			if err == nil || stdout != "" {
@@ -1189,7 +1209,7 @@ func TestShow(t *testing.T) {
 		generateOK(t, root)
 		before := pairBytes(t, root)
 		got := showOK(t, root, "C000001")
-		want := "## C000001\n\nfile: `internal/example.go`\nlines: 3\n\n### Comment\n\nExample adds nothing.\n\n### Context\n\n```go\n// Example adds nothing.\nfunc Example() {\n}\n```\n"
+		want := "## C000001\n\nfile: `internal/example.go`\nlines: 3\n\n### Context\n\n```go\n// Example adds nothing.\nfunc Example() {\n}\n```\n"
 		if got != want {
 			t.Fatalf("stdout = %q\nwant %q", got, want)
 		}
@@ -1220,10 +1240,13 @@ func TestShow(t *testing.T) {
 		if strings.Index(got, "file: `b.go`") > strings.Index(got, "file: `a.go`") {
 			t.Fatalf("files follow index order: %q", got)
 		}
-		beta := strings.Index(got, "### Comment\n\nbeta\n")
-		alpha := strings.Index(got, "### Comment\n\nalpha\n")
+		beta := strings.Index(got, "// beta\n")
+		alpha := strings.Index(got, "// alpha\n")
 		if beta < 0 || alpha < beta {
 			t.Fatalf("comment order = %q", got)
+		}
+		if strings.Contains(got, "### Comment") {
+			t.Fatalf("show repeated the comment section: %q", got)
 		}
 		repeated := showOK(t, root, "C000001", "C000001", "C000001")
 		if strings.Count(repeated, "## C000001\n") != 3 {
@@ -1271,7 +1294,11 @@ func TestShow(t *testing.T) {
 		writeProjectFile(t, root, "a.go", "package a\n\n// alpha\n// beta\nfunc F() {}\n")
 		generateOK(t, root)
 		got := showOK(t, root, "C000001")
-		if !strings.Contains(got, "### Comment\n\nalpha\nbeta\n\n### Context\n") {
+		if strings.Contains(got, "### Comment") || strings.Contains(got, "alpha\nbeta") {
+			t.Fatalf("multiline repeated normalized text: %q", got)
+		}
+		body := contextBody(t, got)
+		if !strings.Contains(body, "// alpha\n// beta\n") || !strings.Contains(body, "func F()") {
 			t.Fatalf("multiline = %q", got)
 		}
 
@@ -1283,7 +1310,10 @@ func TestShow(t *testing.T) {
 			t.Fatalf("stored text = %q", idx.Entries()[0].Text)
 		}
 		got = showOK(t, root, "C000001")
-		if !strings.Contains(got, "### Comment\n\n### Context\n") {
+		if strings.Contains(got, "### Comment") {
+			t.Fatalf("empty comment was repeated: %q", got)
+		}
+		if !strings.Contains(contextBody(t, got), "//\n") {
 			t.Fatalf("empty = %q", got)
 		}
 
@@ -1293,13 +1323,12 @@ func TestShow(t *testing.T) {
 		idx, _ = loadIndex(t, root)
 		text := idx.Entries()[0].Text
 		got = showOK(t, root, "C000001")
-		if !strings.Contains(got, "### Comment\n\n"+text+"\n\n### Context\n") {
-			t.Fatalf("markdown comment = %q", got)
+		if strings.Contains(got, "### Comment") || strings.Contains(got, text) {
+			t.Fatalf("markdown comment was repeated outside the source: %q", got)
 		}
-		commentAt := strings.Index(got, "### Comment\n")
-		contextAt := strings.Index(got, "### Context\n")
-		if strings.Contains(got[commentAt:contextAt], "```") {
-			t.Fatalf("comment section is fenced: %q", got[commentAt:contextAt])
+		body = contextBody(t, got)
+		if !strings.Contains(body, "// # Title") || !strings.Contains(body, "// **bold** and `code`") {
+			t.Fatalf("markdown comment = %q", got)
 		}
 	})
 
@@ -1347,7 +1376,7 @@ func TestShow(t *testing.T) {
 		if strings.Contains(body, "func F()") || strings.Contains(body, "_ = 79") || snippetLineCount(body) > 40 {
 			t.Fatalf("unbounded context:\n%s", body)
 		}
-		if !strings.Contains(body, "// TARGET") || !strings.Contains(got, "### Comment\n\nTARGET\n") {
+		if !strings.Contains(body, "// TARGET") || strings.Contains(got, "### Comment") || strings.Contains(got, "\nTARGET\n") {
 			t.Fatalf("show = %q", got)
 		}
 
@@ -1400,12 +1429,15 @@ func TestShow(t *testing.T) {
 			t.Fatalf("stored = %q", idx.Entries()[0].Text)
 		}
 		got := showOK(t, root, "C000001")
-		if !strings.Contains(got, idx.Entries()[0].Text) {
-			t.Fatal("show truncated the normalized comment")
+		if strings.Contains(got, "### Comment") || strings.Contains(got, idx.Entries()[0].Text) {
+			t.Fatal("show repeated the normalized comment outside the source context")
 		}
 		body := contextBody(t, got)
 		if snippetLineCount(body) > 40 {
 			t.Fatalf("context lines = %d\n%s", snippetLineCount(body), body)
+		}
+		if !strings.Contains(body, "// line 0\n") {
+			t.Fatal("context dropped the source comment")
 		}
 		if strings.Contains(body, "line 99") {
 			t.Fatal("context kept the whole oversized comment group")
@@ -1424,8 +1456,8 @@ func TestShow(t *testing.T) {
 			return opened.ReadFile(logical)
 		}
 		t.Cleanup(func() { showReadFile = nil })
-		stdout, stderr, err := runAt(root, "show", "C000001")
-		if err == nil || stdout != "" || stderr != "nodex: index is stale; run nodex generate\n" {
+		stdout, stderr, err := runAt(root, "index", "show", "C000001")
+		if err == nil || stdout != "" || stderr != "nodex: index is stale; run nodex index generate\n" {
 			t.Fatalf("race = %q %q %v", stdout, stderr, err)
 		}
 		if strings.Contains(stdout, "CHANGED_SOURCE") || strings.Contains(stdout, "original") {
@@ -1437,7 +1469,7 @@ func TestShow(t *testing.T) {
 
 func showOK(t *testing.T, root string, ids ...string) string {
 	t.Helper()
-	args := append([]string{"show"}, ids...)
+	args := append([]string{"index", "show"}, ids...)
 	stdout, stderr, err := runAt(root, args...)
 	if err != nil || stderr != "" {
 		t.Fatalf("show %v: %v\nstdout %q\nstderr %q", ids, err, stdout, stderr)
@@ -1544,7 +1576,7 @@ func TestVersion(t *testing.T) {
 
 	out.Reset()
 	errOut.Reset()
-	err = run([]string{"generate"}, noProject, &out, &errOut)
+	err = run([]string{"index", "generate"}, noProject, &out, &errOut)
 	if err == nil || out.Len() != 0 || !strings.Contains(errOut.String(), "no working directory") {
 		t.Fatalf("generate dispatch = %q %q %v", out.String(), errOut.String(), err)
 	}
@@ -1704,7 +1736,7 @@ func TestIgnoreCommands(t *testing.T) {
 			document := "{\n  \"schema\": 1,\n  \"presets\": " + presets + ",\n  \"exclude\": []\n}\n"
 			writeProjectFile(t, root, ignore.DocumentPath, document)
 			before := readGen(t, root, ignore.DocumentPath)
-			for _, args := range [][]string{{"ignore", "list"}, {"ignore", "enable", "go:tests"}, {"generate"}, {"status"}} {
+			for _, args := range [][]string{{"ignore", "list"}, {"ignore", "enable", "go:tests"}, {"index", "generate"}, {"index", "status"}} {
 				stdout, stderr, err := runAt(root, args...)
 				if err == nil || stdout != "" || !strings.Contains(stderr, "unsupported preset") {
 					t.Fatalf("%v presets %s = %q %q %v", args, presets, stdout, stderr, err)
@@ -1904,8 +1936,8 @@ func TestPresetSourceSelection(t *testing.T) {
 			t.Fatalf("status = %q", got)
 		}
 		assertStaleComments(t, root)
-		stdout, stderr, err := runAt(root, "show", "C000001")
-		if err == nil || stdout != "" || stderr != "nodex: index is stale; run nodex generate\n" {
+		stdout, stderr, err := runAt(root, "index", "show", "C000001")
+		if err == nil || stdout != "" || stderr != "nodex: index is stale; run nodex index generate\n" {
 			t.Fatalf("show = %q %q %v", stdout, stderr, err)
 		}
 		generateOK(t, root)
@@ -1968,7 +2000,7 @@ func TestPresetSourceSelection(t *testing.T) {
 		writeProjectFile(t, root, "keep.go", "// keep\n\npackage p\n")
 		writeProjectFile(t, root, "a_test.go", "package {\n")
 		runOK(t, root, "ignore", "enable", "go:tests")
-		if got := generateOK(t, root); got != "generated 1 comment from 1 source file\n" {
+		if got := generateOK(t, root); got != "generated 1 comment and 1 declaration from 1 source file\n" {
 			t.Fatalf("stdout = %q", got)
 		}
 	})
@@ -1998,7 +2030,7 @@ func TestRootFlagAndNestedResolution(t *testing.T) {
 	writeProjectFile(t, parent, "main.go", "// root\n\npackage main\n")
 	nested := filepath.Join(parent, "nested", "pkg")
 	writeProjectFile(t, nested, "leaf.go", "// leaf\n\npackage leaf\n")
-	if got := runOK(t, nested, "generate"); got != "generated 2 comments from 2 source files\n" {
+	if got := runOK(t, nested, "generate"); got != "generated 2 comments and 2 declarations from 2 source files\n" {
 		t.Fatalf("generate = %q", got)
 	}
 	if _, err := os.Stat(filepath.Join(nested, ".nodex")); !errors.Is(err, os.ErrNotExist) {
@@ -2022,7 +2054,7 @@ func TestRootFlagAndNestedResolution(t *testing.T) {
 	other := t.TempDir()
 	writeProjectFile(t, other, "other.go", "// other\n\npackage other\n")
 	before := pairBytes(t, parent)
-	if got := runOK(t, nested, "--root", other, "generate"); got != "generated 1 comment from 1 source file\n" {
+	if got := runOK(t, nested, "--root", other, "generate"); got != "generated 1 comment and 1 declaration from 1 source file\n" {
 		t.Fatalf("explicit generate = %q", got)
 	}
 	requireSameIndex(t, parent, before)
@@ -2093,7 +2125,7 @@ func TestRootFlagAndNestedResolution(t *testing.T) {
 	explicit := filepath.Join(parent, "explicit")
 	writeProjectFile(t, explicit, "main.go", "// explicit\n\npackage main\n")
 	t.Chdir(parent)
-	if got := runOK(t, "/does/not/matter", "--root", "explicit", "generate"); got != "generated 1 comment from 1 source file\n" {
+	if got := runOK(t, "/does/not/matter", "--root", "explicit", "generate"); got != "generated 1 comment and 1 declaration from 1 source file\n" {
 		t.Fatalf("relative = %q", got)
 	}
 	_, snap = loadIndex(t, explicit)
@@ -2115,7 +2147,7 @@ func TestFinalCLILifecycle(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	if got := runOK(t, nested, "generate"); got != "generated 2 comments from 2 source files\n" {
+	if got := runOK(t, nested, "generate"); got != "generated 2 comments and 2 declarations from 2 source files\n" {
 		t.Fatalf("generate = %q", got)
 	}
 	if got := runOK(t, nested, "status"); got != statusCurrent(2, 2) {
@@ -2137,12 +2169,12 @@ func TestFinalCLILifecycle(t *testing.T) {
 		t.Fatalf("stale status = %q", got)
 	}
 	assertStaleComments(t, root)
-	stdout, stderr, err := runAt(nested, "show", "C000001")
-	if err == nil || stdout != "" || stderr != "nodex: index is stale; run nodex generate\n" {
+	stdout, stderr, err := runAt(nested, "index", "show", "C000001")
+	if err == nil || stdout != "" || stderr != "nodex: index is stale; run nodex index generate\n" {
 		t.Fatalf("stale show = %q %q %v", stdout, stderr, err)
 	}
 
-	if got := runOK(t, nested, "generate"); got != "generated 1 comment from 1 source file\n" {
+	if got := runOK(t, nested, "generate"); got != "generated 1 comment and 1 declaration from 1 source file\n" {
 		t.Fatalf("regenerate = %q", got)
 	}
 	if got := runOK(t, nested, "status"); got != statusCurrent(1, 1) {
@@ -2176,7 +2208,7 @@ func TestFinalCLILifecycle(t *testing.T) {
 
 	other := t.TempDir()
 	writeProjectFile(t, other, "solo.go", "// solo\n\npackage solo\n")
-	if got := runOK(t, nested, "--root", other, "generate"); got != "generated 1 comment from 1 source file\n" {
+	if got := runOK(t, nested, "--root", other, "generate"); got != "generated 1 comment and 1 declaration from 1 source file\n" {
 		t.Fatalf("root generate = %q", got)
 	}
 	if got := runOK(t, root, "--root", other, "status"); got != statusCurrent(1, 1) {
@@ -2190,11 +2222,50 @@ func TestFinalCLILifecycle(t *testing.T) {
 
 func runOK(t *testing.T, root string, args ...string) string {
 	t.Helper()
+	args = indexArgs(args)
 	stdout, stderr, err := runAt(root, args...)
 	if err != nil || stderr != "" {
 		t.Fatalf("%v: %v\nstdout %q\nstderr %q", args, err, stdout, stderr)
 	}
 	return stdout
+}
+
+// indexArgs inserts the index group before a snapshot subcommand.
+// Flags and the end-of-options marker stay in front of the group.
+func indexArgs(args []string) []string {
+	out := make([]string, 0, len(args)+1)
+	i := 0
+	for i < len(args) {
+		arg := args[i]
+		if arg == "--" {
+			out = append(out, arg)
+			i++
+			break
+		}
+		if strings.HasPrefix(arg, "--") {
+			name, _, hasValue := splitFlag(arg)
+			out = append(out, arg)
+			i++
+			if name == "root" && !hasValue && i < len(args) {
+				out = append(out, args[i])
+				i++
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			out = append(out, arg)
+			i++
+			continue
+		}
+		break
+	}
+	if i < len(args) {
+		switch args[i] {
+		case "generate", "comments", "declarations", "status", "show":
+			out = append(out, "index")
+		}
+	}
+	return append(out, args[i:]...)
 }
 
 func writeIgnore(t *testing.T, root string, presets, excludes []string) {
@@ -2456,7 +2527,7 @@ func TestSkillCommands(t *testing.T) {
 			t.Fatalf("mkdir: %v", err)
 		}
 		writeProjectFile(t, root, "main.go", "// hello\n\npackage main\n")
-		if got := runOK(t, root, "generate"); got != "generated 1 comment from 1 source file\n" {
+		if got := runOK(t, root, "generate"); got != "generated 1 comment and 1 declaration from 1 source file\n" {
 			t.Fatalf("generate = %q", got)
 		}
 		before := pairBytes(t, root)
@@ -2637,4 +2708,221 @@ func setHomeFunc(t *testing.T, fn func() (string, error)) {
 	previous := userHomeDir
 	userHomeDir = fn
 	t.Cleanup(func() { userHomeDir = previous })
+}
+
+func TestIndexDeclarations(t *testing.T) {
+	const sample = "" +
+		"// Package sample documents sample.\n" +
+		"package sample\n" +
+		"\n" +
+		"// F documents F.\n" +
+		"func F() {}\n" +
+		"\n" +
+		"func g() {}\n" +
+		"\n" +
+		"const (\n" +
+		"\t// A documents A.\n" +
+		"\tA = 1\n" +
+		"\tB = 2\n" +
+		")\n" +
+		"\n" +
+		"// TGroup documents the type group.\n" +
+		"type (\n" +
+		"\tT struct {\n" +
+		"\t\t// Name documents Name.\n" +
+		"\t\tName string\n" +
+		"\t\tHidden string\n" +
+		"\t}\n" +
+		")\n"
+	const wantDecls = "" +
+		"## D000001\n\nkind: package\nnames: sample\ndoc: C000001\n\n" +
+		"## D000002\n\nkind: function\nnames: F\ndoc: C000002\n\n" +
+		"## D000003\n\nkind: function\nnames: g\ndoc: none\n\n" +
+		"## D000004\n\nkind: const-group\nnames: A, B\ndoc: none\n\n" +
+		"## D000005\n\nkind: const\nnames: A\ndoc: C000003\n\n" +
+		"## D000006\n\nkind: const\nnames: B\ndoc: none\n\n" +
+		"## D000007\n\nkind: type-group\nnames: T\ndoc: C000004\n\n" +
+		"## D000008\n\nkind: type\nnames: T\ndoc: none\n\n" +
+		"## D000009\n\nkind: field\nnames: Name\ndoc: C000005\n\n" +
+		"## D000010\n\nkind: field\nnames: Hidden\ndoc: none\n"
+	const wantComments = "" +
+		"## C000001\n\nPackage sample documents sample.\n\n" +
+		"## C000002\n\nF documents F.\n\n" +
+		"## C000003\n\nA documents A.\n\n" +
+		"## C000004\n\nTGroup documents the type group.\n\n" +
+		"## C000005\n\nName documents Name.\n"
+
+	t.Run("empty project", func(t *testing.T) {
+		root := t.TempDir()
+		if got := generateOK(t, root); got != "generated 0 comments and 0 declarations from 0 source files\n" {
+			t.Fatalf("generate = %q", got)
+		}
+		if got := commandOK(t, root, "declarations"); got != "" {
+			t.Fatalf("declarations = %q", got)
+		}
+		if got := commandOK(t, root, "comments"); got != "" {
+			t.Fatalf("comments = %q", got)
+		}
+	})
+
+	t.Run("package only", func(t *testing.T) {
+		root := t.TempDir()
+		writeProjectFile(t, root, "a.go", "package a\n")
+		generateOK(t, root)
+		if got := commandOK(t, root, "comments"); got != "" {
+			t.Fatalf("comments = %q", got)
+		}
+		got := commandOK(t, root, "declarations")
+		want := "## D000001\n\nkind: package\nnames: a\ndoc: none\n"
+		if got != want {
+			t.Fatalf("declarations = %q\nwant %q", got, want)
+		}
+		shown := showOK(t, root, "D000001")
+		wantShow := "## D000001\n\nfile: `a.go`\nlines: 1\nkind: package\nnames: a\ndoc: none\n\n### Context\n\n```go\npackage a\n```\n"
+		if shown != wantShow {
+			t.Fatalf("show = %q\nwant %q", shown, wantShow)
+		}
+	})
+
+	t.Run("empty names", func(t *testing.T) {
+		root := t.TempDir()
+		writeProjectFile(t, root, "a.go", "package p\n\ntype T struct {\n\tnone int\n\tU\n}\n\ntype U struct{}\n")
+		generateOK(t, root)
+		got := commandOK(t, root, "declarations")
+		want := "" +
+			"## D000001\n\nkind: package\nnames: p\ndoc: none\n\n" +
+			"## D000002\n\nkind: type\nnames: T\ndoc: none\n\n" +
+			"## D000003\n\nkind: field\nnames: none\ndoc: none\n\n" +
+			"## D000004\n\nkind: field\nnames:\ndoc: none\n\n" +
+			"## D000005\n\nkind: type\nnames: U\ndoc: none\n"
+		if got != want {
+			t.Fatalf("declarations = %q\nwant %q", got, want)
+		}
+		shown := showOK(t, root, "D000003", "D000004")
+		if !strings.Contains(shown, "kind: field\nnames: none\ndoc: none\n") || !strings.Contains(shown, "kind: field\nnames:\ndoc: none\n") {
+			t.Fatalf("show = %q", shown)
+		}
+	})
+
+	root := t.TempDir()
+	writeProjectFile(t, root, "sample.go", sample)
+	if got := generateOK(t, root); got != "generated 5 comments and 10 declarations from 1 source file\n" {
+		t.Fatalf("generate = %q", got)
+	}
+	if got := commandOK(t, root, "comments"); got != wantComments {
+		t.Fatalf("comments = %q", got)
+	}
+	if got := commandOK(t, root, "declarations"); got != wantDecls {
+		t.Fatalf("declarations = %q\nwant %q", got, wantDecls)
+	}
+	idx, snap := loadIndex(t, root)
+	if snap.CommentCount != 5 || snap.DeclarationCount != 10 || snap.CommentsDigest != index.DigestBytes(readGen(t, root, index.CommentsPath)) || snap.DeclarationsDigest != index.DigestBytes(readGen(t, root, index.DeclarationsPath)) {
+		t.Fatalf("snapshot = %+v", snap)
+	}
+	if idx.Declarations()[1].Doc.String() != "C000002" || idx.Declarations()[2].Doc.Valid() || idx.Declarations()[6].Doc.String() != "C000004" || idx.Declarations()[7].Doc.Valid() {
+		t.Fatalf("relationships = %+v", idx.Declarations())
+	}
+
+	commentShow := showOK(t, root, "C000002")
+	if strings.Contains(commentShow, "### Comment") {
+		t.Fatalf("comment show repeated a comment section: %q", commentShow)
+	}
+	before := strings.Split(commentShow, "### Context\n")[0]
+	if strings.Contains(before, "F documents F.") {
+		t.Fatalf("normalized comment precedes context: %q", commentShow)
+	}
+	if !strings.Contains(contextBody(t, commentShow), "// F documents F.\n") {
+		t.Fatalf("context dropped the source comment: %q", commentShow)
+	}
+
+	declShow := showOK(t, root, "D000002")
+	wantDeclShow := "## D000002\n\nfile: `sample.go`\nlines: 5\nkind: function\nnames: F\ndoc: C000002\n\n### Context\n\n```go\nfunc F() {}\n```\n"
+	if declShow != wantDeclShow {
+		t.Fatalf("declaration show = %q\nwant %q", declShow, wantDeclShow)
+	}
+
+	groupShow := showOK(t, root, "D000004")
+	groupHead := strings.Split(groupShow, "### Context\n")[0]
+	if strings.Contains(groupHead, "A documents A.") || !strings.Contains(groupHead, "doc: none\n") {
+		t.Fatalf("group metadata = %q", groupHead)
+	}
+
+	mixed := showOK(t, root, "C000002", "D000005", "C000002")
+	first := strings.Index(mixed, "## C000002\n")
+	second := strings.Index(mixed, "## D000005\n")
+	third := strings.Index(mixed[first+1:], "## C000002\n")
+	if first < 0 || second < first || third < 0 {
+		t.Fatalf("order = %q", mixed)
+	}
+	if strings.Count(mixed, "## C000002\n") != 2 || strings.Count(mixed, "## D000005\n") != 1 {
+		t.Fatalf("duplicates = %q", mixed)
+	}
+	if strings.Contains(mixed, "### Comment") {
+		t.Fatalf("mixed show repeated a comment section: %q", mixed)
+	}
+
+	beforeBytes := pairBytes(t, root)
+	for _, args := range [][]string{
+		{"index", "show", "C000002", "D000099"},
+		{"index", "show", "D000099", "C000002"},
+		{"index", "show", "D000001", "nope"},
+		{"index", "show", "nope", "D000001"},
+		{"index", "show", "D000000"},
+		{"index", "show", "d000001"},
+		{"index", "show", "C000001", "D000001", "C000099"},
+	} {
+		stdout, stderr, err := runAt(root, args...)
+		if err == nil || stdout != "" {
+			t.Fatalf("%v = %q %q %v", args, stdout, stderr, err)
+		}
+		if strings.Contains(stdout, "## ") || strings.Contains(stdout, "func F") {
+			t.Fatalf("%v leaked %q", args, stdout)
+		}
+	}
+	requireSameIndex(t, root, beforeBytes)
+
+	writeProjectFile(t, root, "sample.go", sample+"\nfunc extra() {}\n")
+	stdout, stderr, err := runAt(root, "index", "declarations")
+	if err == nil || stdout != "" || stderr != "nodex: index is stale; run nodex index generate\n" {
+		t.Fatalf("stale declarations = %q %q %v", stdout, stderr, err)
+	}
+	requireSameIndex(t, root, beforeBytes)
+	writeProjectFile(t, root, "sample.go", sample)
+
+	showReadFile = func(opened *project.Project, logical string) ([]byte, error) {
+		if logical == "sample.go" {
+			return []byte("package sample\n"), nil
+		}
+		return opened.ReadFile(logical)
+	}
+	t.Cleanup(func() { showReadFile = nil })
+	stdout, stderr, err = runAt(root, "index", "show", "D000002")
+	if err == nil || stdout != "" || stderr != "nodex: index is stale; run nodex index generate\n" {
+		t.Fatalf("race = %q %q %v", stdout, stderr, err)
+	}
+	if strings.Contains(stdout, "func F") || strings.Contains(stdout, "package sample") {
+		t.Fatalf("race stdout = %q", stdout)
+	}
+	requireSameIndex(t, root, beforeBytes)
+	showReadFile = nil
+
+	declPath := filepath.Join(resolvedRoot(t, root), filepath.FromSlash(index.DeclarationsPath))
+	broken := readFile(t, declPath)
+	broken[len(broken)-2] ^= 0x1
+	if err := os.WriteFile(declPath, broken, 0o644); err != nil {
+		t.Fatalf("tamper: %v", err)
+	}
+	if got := commandOK(t, root, "status"); got != "index: corrupt\n" {
+		t.Fatalf("status = %q", got)
+	}
+	stdout, stderr, err = runAt(root, "index", "declarations")
+	if err == nil || stdout != "" || !strings.Contains(stderr, "corrupt") {
+		t.Fatalf("corrupt declarations = %q %q %v", stdout, stderr, err)
+	}
+	if err := os.Remove(declPath); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if got := commandOK(t, root, "status"); got != "index: corrupt\n" {
+		t.Fatalf("missing declarations status = %q", got)
+	}
 }

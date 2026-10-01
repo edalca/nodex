@@ -16,7 +16,21 @@ import (
 // Project.ReadFile.
 var showReadFile func(opened *project.Project, logical string) ([]byte, error)
 
-// show resolves comment IDs from the current generated index.
+// showTarget is one resolved comment or declaration, in caller order.
+type showTarget struct {
+	comment index.Entry
+	decl    index.Declaration
+	isDecl  bool
+}
+
+func (t showTarget) path() string {
+	if t.isDecl {
+		return t.decl.Path
+	}
+	return t.comment.Path
+}
+
+// show resolves comment and declaration IDs from the current generated index.
 //
 // ids are the caller's arguments, in order, including duplicates. Every ID
 // is parsed and resolved before any successful output is built. A missing
@@ -27,42 +41,79 @@ var showReadFile func(opened *project.Project, logical string) ([]byte, error)
 // match the snapshot fingerprint.
 func show(dir string, ids []string) (string, error) {
 	if len(ids) == 0 {
-		return "", fmt.Errorf("show requires a comment ID")
+		return "", fmt.Errorf("index show requires an ID")
 	}
 	idx, snap, state, err := openCurrentIndex(dir)
 	if err != nil {
 		return "", err
 	}
-	entries := make([]index.Entry, len(ids))
+	targets := make([]showTarget, len(ids))
 	for i, text := range ids {
-		id, err := index.ParseID(text)
+		target, err := resolveShowID(idx, text)
 		if err != nil {
 			return "", err
 		}
-		entry, ok := idx.Lookup(id)
-		if !ok {
-			return "", fmt.Errorf("unknown comment ID %s", id)
-		}
-		entries[i] = entry
+		targets[i] = target
 	}
 	opened, err := project.Open(state.root)
 	if err != nil {
 		return "", err
 	}
-	bodies := make(map[string][]byte, len(entries))
-	sections := make([]string, len(entries))
-	for i, entry := range entries {
-		body, err := cachedSource(opened, snap, bodies, entry.Path)
+	bodies := make(map[string][]byte, len(targets))
+	sections := make([]string, len(targets))
+	for i, target := range targets {
+		body, err := cachedSource(opened, snap, bodies, target.path())
 		if err != nil {
 			return "", err
 		}
-		snippet, err := syntax.Context(entry.Path, body, entry.Range)
+		if target.isDecl {
+			snippet, err := syntax.DeclarationContext(target.decl.Path, body, target.decl.Range)
+			if err != nil {
+				return "", err
+			}
+			sections[i] = formatDeclarationShow(target.decl, snippet)
+			continue
+		}
+		snippet, err := syntax.Context(target.comment.Path, body, target.comment.Range)
 		if err != nil {
 			return "", err
 		}
-		sections[i] = formatShow(entry, snippet)
+		sections[i] = formatShow(target.comment, snippet)
 	}
 	return strings.Join(sections, "\n"), nil
+}
+
+// resolveShowID parses text as one canonical comment or declaration ID and
+// finds it in idx. A prefix other than C or D is rejected. C and D are not
+// interchangeable.
+func resolveShowID(idx *index.Index, text string) (showTarget, error) {
+	if text == "" {
+		return showTarget{}, fmt.Errorf("invalid ID %q", text)
+	}
+	switch text[0] {
+	case 'C':
+		id, err := index.ParseID(text)
+		if err != nil {
+			return showTarget{}, err
+		}
+		entry, ok := idx.Lookup(id)
+		if !ok {
+			return showTarget{}, fmt.Errorf("unknown comment ID %s", id)
+		}
+		return showTarget{comment: entry}, nil
+	case 'D':
+		id, err := index.ParseDeclID(text)
+		if err != nil {
+			return showTarget{}, err
+		}
+		decl, ok := idx.LookupDeclaration(id)
+		if !ok {
+			return showTarget{}, fmt.Errorf("unknown declaration ID %s", id)
+		}
+		return showTarget{decl: decl, isDecl: true}, nil
+	default:
+		return showTarget{}, fmt.Errorf("invalid ID %q", text)
+	}
 }
 
 func cachedSource(opened *project.Project, snap index.Snapshot, bodies map[string][]byte, logical string) ([]byte, error) {
@@ -108,17 +159,32 @@ func formatShow(entry index.Entry, snippet syntax.Snippet) string {
 	b.WriteString("lines: ")
 	b.WriteString(formatLines(entry.Range))
 	b.WriteString("\n\n")
-	b.WriteString("### Comment\n\n")
-	b.WriteString(entry.Text)
-	switch {
-	case entry.Text == "":
-	case strings.HasSuffix(entry.Text, "\n"):
-		b.WriteByte('\n')
-	default:
-		b.WriteString("\n\n")
-	}
 	b.WriteString("### Context\n\n")
 	b.WriteString(markdownFence(fenceInfo(entry.Language), snippet.Text))
+	return b.String()
+}
+
+func formatDeclarationShow(decl index.Declaration, snippet syntax.Snippet) string {
+	var b strings.Builder
+	b.WriteString("## ")
+	b.WriteString(decl.ID.String())
+	b.WriteString("\n\n")
+	b.WriteString("file: `")
+	b.WriteString(decl.Path)
+	b.WriteString("`\n")
+	b.WriteString("lines: ")
+	b.WriteString(formatLines(decl.Range))
+	b.WriteByte('\n')
+	b.WriteString("kind: ")
+	b.WriteString(string(decl.Kind))
+	b.WriteByte('\n')
+	b.WriteString(formatNamesLine(decl.Names))
+	b.WriteByte('\n')
+	b.WriteString("doc: ")
+	b.WriteString(formatDoc(decl.Doc))
+	b.WriteString("\n\n")
+	b.WriteString("### Context\n\n")
+	b.WriteString(markdownFence(fenceInfo(decl.Language), snippet.Text))
 	return b.String()
 }
 

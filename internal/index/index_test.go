@@ -838,7 +838,7 @@ func TestPersistEmptyAndOneEntry(t *testing.T) {
 	if snap.CommentCount != 0 || snap.Schema != index.SchemaVersion || snap.CommentsDigest != emptyDigest {
 		t.Fatalf("snapshot = %+v", snap)
 	}
-	wantSnap := fmt.Sprintf("{\"schema\":1,\"policy_identity\":%q,\"comments_digest\":%q,\"comment_count\":0,\"sources\":[]}\n", policy, emptyDigest)
+	wantSnap := fmt.Sprintf("{\"schema\":1,\"policy_identity\":%q,\"comments_digest\":%q,\"comment_count\":0,\"declarations_digest\":%q,\"declaration_count\":0,\"sources\":[]}\n", policy, emptyDigest, emptyDigest)
 	if string(snapshot) != wantSnap {
 		t.Fatalf("snapshot bytes = %s\nwant %s", snapshot, wantSnap)
 	}
@@ -867,7 +867,7 @@ func TestPersistEmptyAndOneEntry(t *testing.T) {
 	if snap.CommentCount != 1 || snap.CommentsDigest != index.DigestBytes(comments) {
 		t.Fatalf("digest = %s count %d", snap.CommentsDigest, snap.CommentCount)
 	}
-	wantSnap = fmt.Sprintf("{\"schema\":1,\"policy_identity\":%q,\"comments_digest\":%q,\"comment_count\":1,\"sources\":[{\"path\":\"a.go\",\"language\":\"go\",\"digest\":%q}]}\n", policy, snap.CommentsDigest, source.Digest)
+	wantSnap = fmt.Sprintf("{\"schema\":1,\"policy_identity\":%q,\"comments_digest\":%q,\"comment_count\":1,\"declarations_digest\":%q,\"declaration_count\":0,\"sources\":[{\"path\":\"a.go\",\"language\":\"go\",\"digest\":%q}]}\n", policy, snap.CommentsDigest, emptyDigest, source.Digest)
 	if got := readPersisted(t, again, index.SnapshotPath); string(got) != wantSnap {
 		t.Fatalf("snapshot = %s\nwant %s", got, wantSnap)
 	}
@@ -939,7 +939,7 @@ func TestPersistIsByteStable(t *testing.T) {
 		t.Fatalf("text = %q", idx.Entries()[0].Text)
 	}
 	names := indexNames(t, roots[0])
-	if !slices.Equal(names, []string{"comments.jsonl", "snapshot.json"}) {
+	if !slices.Equal(names, []string{"comments.jsonl", "declarations.jsonl", "snapshot.json"}) {
 		t.Fatalf("index dir = %q", names)
 	}
 }
@@ -1255,7 +1255,7 @@ func TestPublishFailureCleansTemps(t *testing.T) {
 	if !bytes.Equal(readPersisted(t, root, index.SnapshotPath), before) {
 		t.Fatal("failed Persist replaced the snapshot")
 	}
-	if names := indexNames(t, root); !slices.Equal(names, []string{"comments.jsonl", "snapshot.json"}) {
+	if names := indexNames(t, root); !slices.Equal(names, []string{"comments.jsonl", "declarations.jsonl", "snapshot.json"}) {
 		t.Fatalf("index dir = %q", names)
 	}
 
@@ -1292,7 +1292,14 @@ func TestCurrent(t *testing.T) {
 	lang := a
 	lang.Language = syntax.Language("text")
 	base := []index.Source{a, b}
-	snap := index.Snapshot{PolicyIdentity: policy, Sources: []index.Source{a, b}, CommentCount: 9, CommentsDigest: "ignored"}
+	snap := index.Snapshot{
+		PolicyIdentity:     policy,
+		Sources:            []index.Source{a, b},
+		CommentCount:       9,
+		CommentsDigest:     "ignored",
+		DeclarationCount:   4,
+		DeclarationsDigest: "also-ignored",
+	}
 	cases := []struct {
 		name   string
 		policy string
@@ -1344,11 +1351,13 @@ func indexNames(t *testing.T, root string) []string {
 }
 
 type testSnapshot struct {
-	Schema         int          `json:"schema"`
-	PolicyIdentity string       `json:"policy_identity"`
-	CommentsDigest string       `json:"comments_digest"`
-	CommentCount   int          `json:"comment_count"`
-	Sources        []testSource `json:"sources"`
+	Schema             int          `json:"schema"`
+	PolicyIdentity     string       `json:"policy_identity"`
+	CommentsDigest     string       `json:"comments_digest"`
+	CommentCount       int          `json:"comment_count"`
+	DeclarationsDigest string       `json:"declarations_digest"`
+	DeclarationCount   int          `json:"declaration_count"`
+	Sources            []testSource `json:"sources"`
 }
 
 type testSource struct {
@@ -1381,11 +1390,13 @@ func matchingSnapshot(policy string, count int, sources []testSource, comments [
 		sources = []testSource{}
 	}
 	return testSnapshot{
-		Schema:         1,
-		PolicyIdentity: policy,
-		CommentsDigest: index.DigestBytes(comments),
-		CommentCount:   count,
-		Sources:        sources,
+		Schema:             1,
+		PolicyIdentity:     policy,
+		CommentsDigest:     index.DigestBytes(comments),
+		CommentCount:       count,
+		DeclarationsDigest: emptyDigest,
+		DeclarationCount:   0,
+		Sources:            sources,
 	}
 }
 
@@ -1434,6 +1445,7 @@ func writePair(t *testing.T, root string, snapshot, comments []byte) {
 	t.Helper()
 	writeRaw(t, root, index.SnapshotPath, snapshot)
 	writeRaw(t, root, index.CommentsPath, comments)
+	writeRaw(t, root, index.DeclarationsPath, nil)
 }
 
 func writeRaw(t *testing.T, root, logical string, data []byte) {
@@ -1444,5 +1456,368 @@ func writeRaw(t *testing.T, root, logical string, data []byte) {
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatalf("write %s: %v", logical, err)
+	}
+}
+
+func TestParseDeclID(t *testing.T) {
+	id := mustParseDecl(t, "D000001")
+	if id.String() != "D000001" {
+		t.Fatalf("String = %s", id.String())
+	}
+	wide := mustParseDecl(t, "D1000000")
+	if wide.String() != "D1000000" {
+		t.Fatalf("wide = %s", wide.String())
+	}
+	for _, text := range []string{"", "D", "D1", "D000000", "D0000001", "d000001", "C000001", "D000001 ", " D000001"} {
+		if _, err := index.ParseDeclID(text); !errors.Is(err, index.ErrInvalidDeclID) {
+			t.Fatalf("ParseDeclID(%q) = %v", text, err)
+		}
+	}
+	if _, err := index.ParseID("D000001"); !errors.Is(err, index.ErrInvalidID) {
+		t.Fatal("comment parser accepted a declaration ID")
+	}
+}
+
+func TestDeclarationIndex(t *testing.T) {
+	const sample = "" +
+		"// Package sample documents sample.\n" +
+		"package sample\n" +
+		"\n" +
+		"// F documents F.\n" +
+		"func F() {}\n" +
+		"\n" +
+		"func g() {}\n" +
+		"\n" +
+		"const (\n" +
+		"\t// A documents A.\n" +
+		"\tA = 1\n" +
+		"\tB = 2\n" +
+		")\n" +
+		"\n" +
+		"// TGroup documents the type group.\n" +
+		"type (\n" +
+		"\tT struct {\n" +
+		"\t\t// Name documents Name.\n" +
+		"\t\tName string\n" +
+		"\t\tHidden string\n" +
+		"\t}\n" +
+		")\n"
+	doc, err := syntax.Parse("sample.go", []byte(sample))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	idx := mustBuild(t, doc)
+	if idx.Len() != 5 || idx.DeclarationLen() != 10 {
+		t.Fatalf("comments=%d declarations=%d", idx.Len(), idx.DeclarationLen())
+	}
+	byText := map[string]index.ID{}
+	for i, entry := range idx.Entries() {
+		if entry.ID.String() != fmt.Sprintf("C%06d", i+1) {
+			t.Fatalf("comment %d ID = %s", i, entry.ID)
+		}
+		byText[entry.Text] = entry.ID
+	}
+	wantDoc := []string{
+		"Package sample documents sample.",
+		"F documents F.",
+		"",
+		"",
+		"A documents A.",
+		"",
+		"TGroup documents the type group.",
+		"",
+		"Name documents Name.",
+		"",
+	}
+	wantKind := []syntax.Kind{
+		syntax.KindPackage, syntax.KindFunction, syntax.KindFunction,
+		syntax.KindConstGroup, syntax.KindConst, syntax.KindConst,
+		syntax.KindTypeGroup, syntax.KindType, syntax.KindField, syntax.KindField,
+	}
+	wantNames := [][]string{
+		{"sample"}, {"F"}, {"g"}, {"A", "B"}, {"A"}, {"B"}, {"T"}, {"T"}, {"Name"}, {"Hidden"},
+	}
+	decls := idx.Declarations()
+	for i, decl := range decls {
+		if decl.ID.String() != fmt.Sprintf("D%06d", i+1) || decl.Path != "sample.go" || decl.Kind != wantKind[i] || !slices.Equal(decl.Names, wantNames[i]) {
+			t.Fatalf("decl %d = %s %s %q", i, decl.ID, decl.Kind, decl.Names)
+		}
+		if wantDoc[i] == "" {
+			if decl.Doc.Valid() {
+				t.Fatalf("decl %d has doc %s", i, decl.Doc)
+			}
+			continue
+		}
+		commentID := byText[wantDoc[i]]
+		if !commentID.Valid() || decl.Doc != commentID {
+			t.Fatalf("decl %d doc = %s, want %s for %q", i, decl.Doc, commentID, wantDoc[i])
+		}
+		entry, ok := idx.Lookup(decl.Doc)
+		if !ok || entry.Path != decl.Path || entry.Text != wantDoc[i] {
+			t.Fatalf("mapped comment = %+v ok=%v", entry, ok)
+		}
+	}
+	decls[3].Names[0] = "mutated"
+	if idx.Declarations()[3].Names[0] != "A" {
+		t.Fatal("Declarations returned shared name state")
+	}
+
+	policy := index.DigestBytes([]byte("policy"))
+	source := index.Source{Path: "sample.go", Language: syntax.Go, Digest: index.DigestBytes([]byte(sample))}
+	root := t.TempDir()
+	snap, err := index.Persist(root, policy, []index.Source{source}, idx)
+	if err != nil {
+		t.Fatalf("Persist: %v", err)
+	}
+	declBytes := readPersisted(t, root, index.DeclarationsPath)
+	commentBytes := readPersisted(t, root, index.CommentsPath)
+	if snap.CommentCount != 5 || snap.DeclarationCount != 10 || snap.CommentsDigest != index.DigestBytes(commentBytes) || snap.DeclarationsDigest != index.DigestBytes(declBytes) {
+		t.Fatalf("snapshot counts = %+v", snap)
+	}
+	if !bytes.Contains(declBytes, []byte(`"names":["A","B"]`)) || !bytes.Contains(declBytes, []byte(`"doc":null`)) || bytes.Contains(declBytes, []byte("documents")) {
+		t.Fatalf("declarations = %s", declBytes)
+	}
+	loaded, loadedSnap, err := index.Load(root)
+	if err != nil || loaded.DeclarationLen() != 10 || loaded.Declarations()[1].Doc != byText["F documents F."] {
+		t.Fatalf("Load = %v %v", loaded, err)
+	}
+	if loadedSnap.DeclarationsDigest != snap.DeclarationsDigest || !index.Current(loadedSnap, policy, []index.Source{source}) {
+		t.Fatal("loaded snapshot diverged")
+	}
+	firstDecl := append([]byte(nil), declBytes...)
+	firstSnap := readPersisted(t, root, index.SnapshotPath)
+	if _, err := index.Persist(root, policy, []index.Source{source}, idx); err != nil {
+		t.Fatalf("Persist again: %v", err)
+	}
+	if !bytes.Equal(readPersisted(t, root, index.DeclarationsPath), firstDecl) || !bytes.Equal(readPersisted(t, root, index.SnapshotPath), firstSnap) {
+		t.Fatal("declaration bytes changed on repeat")
+	}
+
+	broken := append([]byte(nil), firstDecl...)
+	broken[len(broken)-2] ^= 0x1
+	if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(index.DeclarationsPath)), broken, 0o644); err != nil {
+		t.Fatalf("tamper: %v", err)
+	}
+	if _, _, err := index.Load(root); !errors.Is(err, index.ErrCorrupt) || !errors.Is(err, index.ErrDeclarationDigestMismatch) {
+		t.Fatalf("tamper = %v", err)
+	}
+	if err := os.Remove(filepath.Join(root, filepath.FromSlash(index.DeclarationsPath))); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if _, _, err := index.Load(root); !errors.Is(err, index.ErrCorrupt) || !strings.Contains(err.Error(), "declarations.jsonl is missing") {
+		t.Fatalf("missing = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(index.DeclarationsPath)), firstDecl, 0o644); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	snapRaw := readPersisted(t, root, index.SnapshotPath)
+	counted := bytes.Replace(snapRaw, []byte(`"declaration_count":10`), []byte(`"declaration_count":9`), 1)
+	if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(index.SnapshotPath)), counted, 0o644); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if _, _, err := index.Load(root); !errors.Is(err, index.ErrCorrupt) || !errors.Is(err, index.ErrDeclarationCountMismatch) {
+		t.Fatalf("count = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(index.SnapshotPath)), snapRaw, 0o644); err != nil {
+		t.Fatalf("restore snapshot: %v", err)
+	}
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(bytes.TrimSpace(snapRaw), &fields); err != nil {
+		t.Fatalf("unmarshal snapshot: %v", err)
+	}
+	delete(fields, "declarations_digest")
+	delete(fields, "declaration_count")
+	old, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(index.SnapshotPath)), append(old, '\n'), 0o644); err != nil {
+		t.Fatalf("old schema: %v", err)
+	}
+	if _, _, err := index.Load(root); !errors.Is(err, index.ErrCorrupt) || !strings.Contains(err.Error(), "declarations_digest") {
+		t.Fatalf("old schema = %v", err)
+	}
+}
+
+func TestDeclarationInvariants(t *testing.T) {
+	comment := cmt("alpha", 0, 5)
+	good := goDoc("a.go", comment)
+	good.Declarations = []syntax.Declaration{{
+		Kind:   syntax.KindFunction,
+		Names:  []string{"F"},
+		Range:  span(10, 20),
+		HasDoc: true,
+		Doc:    comment.Range,
+	}}
+	idx := mustBuild(t, good)
+	if idx.DeclarationLen() != 1 || idx.Declarations()[0].Doc.String() != "C000001" || idx.Declarations()[0].ID.String() != "D000001" {
+		t.Fatalf("mapped = %+v", idx.Declarations())
+	}
+
+	bad := goDoc("a.go", comment)
+	bad.Declarations = []syntax.Declaration{{
+		Kind:   syntax.KindFunction,
+		Names:  []string{"F"},
+		Range:  span(10, 20),
+		HasDoc: true,
+		Doc:    span(0, 4),
+	}}
+	err := requireFailure(t, []*syntax.Document{bad})
+	var unresolved *index.UnresolvedDocError
+	if !errors.As(err, &unresolved) || unresolved.Path != "a.go" {
+		t.Fatalf("unresolved = %v", err)
+	}
+
+	dup := goDoc("a.go")
+	dup.Declarations = []syntax.Declaration{
+		{Kind: syntax.KindFunction, Names: []string{"F"}, Range: span(10, 20)},
+		{Kind: syntax.KindFunction, Names: []string{"G"}, Range: span(10, 20)},
+	}
+	err = requireFailure(t, []*syntax.Document{dup})
+	var duplicated *index.DuplicateDeclarationError
+	if !errors.As(err, &duplicated) {
+		t.Fatalf("duplicate = %v", err)
+	}
+
+	early := goDoc("a.go")
+	early.Declarations = []syntax.Declaration{
+		{Kind: syntax.KindVar, Names: []string{"Late"}, Range: span(50, 60)},
+		{Kind: syntax.KindFunction, Names: []string{"Early"}, Range: span(10, 20)},
+		{Kind: syntax.KindVar, Names: []string{"Tied"}, Range: span(10, 20)},
+	}
+	other := goDoc("b.go")
+	other.Declarations = []syntax.Declaration{{Kind: syntax.KindFunction, Names: []string{"B"}, Range: span(1, 2)}}
+	ordered := mustBuild(t, other, early)
+	got := ordered.Declarations()
+	want := []string{"D000001 function Early", "D000002 var Tied", "D000003 var Late", "D000004 function B"}
+	var lines []string
+	for _, decl := range got {
+		lines = append(lines, decl.ID.String()+" "+string(decl.Kind)+" "+strings.Join(decl.Names, ","))
+	}
+	if !slices.Equal(lines, want) {
+		t.Fatalf("order = %q", lines)
+	}
+
+	none := goDoc("a.go")
+	none.Declarations = []syntax.Declaration{{Kind: syntax.KindField, Names: nil, Range: span(1, 2)}}
+	stored := mustBuild(t, none).Declarations()[0]
+	if stored.Names == nil || len(stored.Names) != 0 || stored.Doc.Valid() {
+		t.Fatalf("anonymous = %+v", stored)
+	}
+	policy := index.DigestBytes([]byte("policy"))
+	root := t.TempDir()
+	if _, err := index.Persist(root, policy, []index.Source{{Path: "a.go", Language: syntax.Go, Digest: index.DigestBytes([]byte("package a"))}}, mustBuild(t, none)); err != nil {
+		t.Fatalf("Persist anonymous: %v", err)
+	}
+	raw := readPersisted(t, root, index.DeclarationsPath)
+	if !bytes.Contains(raw, []byte(`"names":[]`)) || !bytes.Contains(raw, []byte(`"doc":null`)) {
+		t.Fatalf("anonymous bytes = %s", raw)
+	}
+	loaded, _, err := index.Load(root)
+	if err != nil || len(loaded.Declarations()[0].Names) != 0 {
+		t.Fatalf("Load anonymous = %v %v", loaded, err)
+	}
+
+	left := goDoc("a.go", cmt("same", 0, 4))
+	left.Declarations = []syntax.Declaration{{Kind: syntax.KindFunction, Names: []string{"F"}, Range: span(8, 12), HasDoc: true, Doc: span(0, 4)}}
+	right := goDoc("a.go", cmt("same", 0, 4))
+	right.Declarations = []syntax.Declaration{{Kind: syntax.KindFunction, Names: []string{"G"}, Range: span(8, 12), HasDoc: true, Doc: span(0, 4)}}
+	dirA, dirB := t.TempDir(), t.TempDir()
+	source := []index.Source{{Path: "a.go", Language: syntax.Go, Digest: index.DigestBytes([]byte("a"))}}
+	if _, err := index.Persist(dirA, policy, source, mustBuild(t, left)); err != nil {
+		t.Fatalf("Persist A: %v", err)
+	}
+	if _, err := index.Persist(dirB, policy, source, mustBuild(t, right)); err != nil {
+		t.Fatalf("Persist B: %v", err)
+	}
+	if !bytes.Equal(readPersisted(t, dirA, index.CommentsPath), readPersisted(t, dirB, index.CommentsPath)) {
+		t.Fatal("comment generations differ")
+	}
+	if err := os.WriteFile(filepath.Join(dirB, filepath.FromSlash(index.DeclarationsPath)), readPersisted(t, dirA, index.DeclarationsPath), 0o644); err != nil {
+		t.Fatalf("swap: %v", err)
+	}
+	if _, _, err := index.Load(dirB); !errors.Is(err, index.ErrCorrupt) || !errors.Is(err, index.ErrDeclarationDigestMismatch) {
+		t.Fatalf("mixed = %v", err)
+	}
+}
+
+func TestDeclarationLoadRejectsBadRecords(t *testing.T) {
+	policy := index.DigestBytes([]byte("policy"))
+	source := testSource{Path: "a.go", Language: "go", Digest: index.DigestBytes([]byte("package a"))}
+	other := testSource{Path: "b.go", Language: "go", Digest: index.DigestBytes([]byte("package b"))}
+	comment := lines(entryLine(t, "C000001", "a.go", "alpha", 1, 2))
+	root := t.TempDir()
+	body := lines(declLine(t, "D000001", "a.go", "function", []string{"F"}, "C000099", 3, 4))
+	writeRaw(t, root, index.SnapshotPath, mustJSON(t, matchingSnapshot(policy, 1, []testSource{source}, comment)))
+	writeRaw(t, root, index.CommentsPath, comment)
+	writeRaw(t, root, index.DeclarationsPath, body)
+	snap := readPersisted(t, root, index.SnapshotPath)
+	snap = bytes.Replace(snap, []byte(`"declaration_count":0`), []byte(`"declaration_count":1`), 1)
+	snap = bytes.Replace(snap, []byte(`"declarations_digest":"`+emptyDigest+`"`), []byte(`"declarations_digest":"`+index.DigestBytes(body)+`"`), 1)
+	writeRaw(t, root, index.SnapshotPath, snap)
+	if _, _, err := index.Load(root); !errors.Is(err, index.ErrCorrupt) || !errors.Is(err, index.ErrDanglingDoc) {
+		t.Fatalf("dangling = %v", err)
+	}
+
+	root = t.TempDir()
+	comments := lines(
+		entryLine(t, "C000001", "a.go", "alpha", 1, 2),
+		entryLine(t, "C000002", "b.go", "beta", 1, 2),
+	)
+	body = lines(declLine(t, "D000001", "a.go", "function", []string{"F"}, "C000002", 3, 4))
+	writeDeclared(t, root, policy, 2, []testSource{source, other}, comments, body)
+	if _, _, err := index.Load(root); !errors.Is(err, index.ErrCorrupt) || !errors.Is(err, index.ErrDanglingDoc) {
+		t.Fatalf("cross-file doc = %v", err)
+	}
+
+	root = t.TempDir()
+	body = lines(
+		declLine(t, "D000001", "b.go", "function", []string{"B"}, "", 1, 2),
+		declLine(t, "D000002", "a.go", "function", []string{"A"}, "", 1, 2),
+	)
+	writeDeclared(t, root, policy, 1, []testSource{source, other}, comment, body)
+	if _, _, err := index.Load(root); !errors.Is(err, index.ErrCorrupt) || !errors.Is(err, index.ErrDeclarationsOutOfOrder) {
+		t.Fatalf("order = %v", err)
+	}
+}
+
+func declLine(t *testing.T, id, path, kind string, names []string, doc string, start, end int) string {
+	t.Helper()
+	docJSON := "null"
+	if doc != "" {
+		docJSON = `"` + doc + `"`
+	}
+	nameJSON, err := json.Marshal(names)
+	if err != nil {
+		t.Fatalf("names: %v", err)
+	}
+	return fmt.Sprintf("{\"id\":%q,\"path\":%q,\"language\":\"go\",\"kind\":%q,\"names\":%s,\"range\":{\"start\":{\"offset\":%d,\"line\":1,\"column\":1},\"end\":{\"offset\":%d,\"line\":1,\"column\":1}},\"doc\":%s}",
+		id, path, kind, nameJSON, start, end, docJSON)
+}
+
+func writeDeclared(t *testing.T, root, policy string, commentCount int, sources []testSource, comments, decls []byte) {
+	t.Helper()
+	snap := matchingSnapshot(policy, commentCount, sources, comments)
+	snap.DeclarationCount = bytes.Count(decls, []byte("\n"))
+	snap.DeclarationsDigest = index.DigestBytes(decls)
+	writeRaw(t, root, index.SnapshotPath, mustJSON(t, snap))
+	writeRaw(t, root, index.CommentsPath, comments)
+	writeRaw(t, root, index.DeclarationsPath, decls)
+}
+
+func mustParseDecl(t *testing.T, text string) index.DeclID {
+	t.Helper()
+	id, err := index.ParseDeclID(text)
+	if err != nil || !id.Valid() || id.String() != text {
+		t.Fatalf("ParseDeclID(%q) = %v, %v", text, id, err)
+	}
+	return id
+}
+
+func span(start, end int) syntax.Range {
+	return syntax.Range{
+		Start: syntax.Position{Offset: start, Line: 1, Column: 1},
+		End:   syntax.Position{Offset: end, Line: 1, Column: 1},
 	}
 }

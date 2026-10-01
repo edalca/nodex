@@ -7,6 +7,11 @@
 // function bodies, line comments, block comments, and directives written
 // as comments. Text inside strings is left alone.
 //
+// ParseFile returns those comments and the declaration facts from the same
+// parse. A declaration fact uses the node's own documentation field. A nil
+// field is reported as no direct documentation. Import declarations are
+// not part of that fact list.
+//
 // Context uses the same parser to select a structural container around one
 // comment group and returns a bounded slice of the caller-supplied bytes.
 // The container is a declaration, the package clause, or the file. The
@@ -105,23 +110,12 @@ func (e *Error) Error() string {
 //
 // A nil src is empty input. On success the comment slice is non-nil and
 // ordered by physical start offset. On failure the error is *Error and the
-// slice is nil.
+// slice is nil. Parse uses the same parse as ParseFile.
 func Parse(src []byte) ([]Comment, error) {
-	src, tf, file, err := parseSource(src)
+	comments, _, err := ParseFile(src)
 	if err != nil {
 		return nil, err
 	}
-	comments := make([]Comment, 0, len(file.Comments))
-	for _, group := range file.Comments {
-		comment, convErr := commentFromGroup(src, tf, group)
-		if convErr != nil {
-			return nil, convErr
-		}
-		comments = append(comments, comment)
-	}
-	sort.SliceStable(comments, func(i, j int) bool {
-		return comments[i].Start.Offset < comments[j].Start.Offset
-	})
 	return comments, nil
 }
 

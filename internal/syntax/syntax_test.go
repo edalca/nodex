@@ -1204,6 +1204,293 @@ func snippetLines(text string) int {
 	return n + 1
 }
 
+func TestGoDeclarations(t *testing.T) {
+	const sample = "" +
+		"// Package sample documents sample.\n" +
+		"package sample\n" +
+		"\n" +
+		"// F documents F.\n" +
+		"func F() {}\n" +
+		"\n" +
+		"func g() {}\n" +
+		"\n" +
+		"const (\n" +
+		"\t// A documents A.\n" +
+		"\tA = 1\n" +
+		"\tB = 2\n" +
+		")\n" +
+		"\n" +
+		"// TGroup documents the type group.\n" +
+		"type (\n" +
+		"\tT struct {\n" +
+		"\t\t// Name documents Name.\n" +
+		"\t\tName string\n" +
+		"\t\tHidden string\n" +
+		"\t}\n" +
+		")\n"
+	doc := mustParseDoc(t, "sample.go", sample)
+	if len(doc.Comments) != 5 {
+		t.Fatalf("comments = %d", len(doc.Comments))
+	}
+	want := []struct {
+		kind  syntax.Kind
+		names []string
+		doc   string
+	}{
+		{syntax.KindPackage, []string{"sample"}, "Package sample documents sample."},
+		{syntax.KindFunction, []string{"F"}, "F documents F."},
+		{syntax.KindFunction, []string{"g"}, ""},
+		{syntax.KindConstGroup, []string{"A", "B"}, ""},
+		{syntax.KindConst, []string{"A"}, "A documents A."},
+		{syntax.KindConst, []string{"B"}, ""},
+		{syntax.KindTypeGroup, []string{"T"}, "TGroup documents the type group."},
+		{syntax.KindType, []string{"T"}, ""},
+		{syntax.KindField, []string{"Name"}, "Name documents Name."},
+		{syntax.KindField, []string{"Hidden"}, ""},
+	}
+	assertDecls(t, doc, want)
+
+	doc = mustParseDoc(t, "one.go", "package one\n\n// X documents X.\nconst X = 1\n")
+	assertDecls(t, doc, []struct {
+		kind  syntax.Kind
+		names []string
+		doc   string
+	}{
+		{syntax.KindPackage, []string{"one"}, ""},
+		{syntax.KindConst, []string{"X"}, "X documents X."},
+	})
+
+	doc = mustParseDoc(t, "vars.go", "package vars\n\nvar A, B int\n")
+	assertDecls(t, doc, []struct {
+		kind  syntax.Kind
+		names []string
+		doc   string
+	}{
+		{syntax.KindPackage, []string{"vars"}, ""},
+		{syntax.KindVar, []string{"A", "B"}, ""},
+	})
+
+	doc = mustParseDoc(t, "group.go", "package group\n\nvar (\n\tA, B int\n\t// C documents C.\n\tC = 1\n)\n")
+	assertDecls(t, doc, []struct {
+		kind  syntax.Kind
+		names []string
+		doc   string
+	}{
+		{syntax.KindPackage, []string{"group"}, ""},
+		{syntax.KindVarGroup, []string{"A", "B", "C"}, ""},
+		{syntax.KindVar, []string{"A", "B"}, ""},
+		{syntax.KindVar, []string{"C"}, "C documents C."},
+	})
+
+	doc = mustParseDoc(t, "method.go", "package method\n\ntype T struct{}\n\nfunc (T) M(a int) int { return a }\n")
+	assertDecls(t, doc, []struct {
+		kind  syntax.Kind
+		names []string
+		doc   string
+	}{
+		{syntax.KindPackage, []string{"method"}, ""},
+		{syntax.KindType, []string{"T"}, ""},
+		{syntax.KindMethod, []string{"M"}, ""},
+	})
+
+	doc = mustParseDoc(t, "iface.go", "package iface\n\ntype I interface {\n\tM(x int)\n\tU\n}\n")
+	assertDecls(t, doc, []struct {
+		kind  syntax.Kind
+		names []string
+		doc   string
+	}{
+		{syntax.KindPackage, []string{"iface"}, ""},
+		{syntax.KindType, []string{"I"}, ""},
+		{syntax.KindField, []string{"M"}, ""},
+		{syntax.KindField, nil, ""},
+	})
+
+	doc = mustParseDoc(t, "embed.go", "package embed\n\ntype E struct {\n\tU\n\t*T\n}\n")
+	assertDecls(t, doc, []struct {
+		kind  syntax.Kind
+		names []string
+		doc   string
+	}{
+		{syntax.KindPackage, []string{"embed"}, ""},
+		{syntax.KindType, []string{"E"}, ""},
+		{syntax.KindField, nil, ""},
+		{syntax.KindField, nil, ""},
+	})
+	for _, decl := range doc.Declarations {
+		if decl.Names == nil {
+			t.Fatalf("names slice is nil: %+v", decl)
+		}
+	}
+
+	doc = mustParseDoc(t, "local.go", "package local\n\nfunc F(a int) (b int) {\n\tconst local = 1\n\ttype localT struct{ E int }\n\treturn a + b\n}\n")
+	assertDecls(t, doc, []struct {
+		kind  syntax.Kind
+		names []string
+		doc   string
+	}{
+		{syntax.KindPackage, []string{"local"}, ""},
+		{syntax.KindFunction, []string{"F"}, ""},
+		{syntax.KindConst, []string{"local"}, ""},
+		{syntax.KindType, []string{"localT"}, ""},
+		{syntax.KindField, []string{"E"}, ""},
+	})
+
+	doc = mustParseDoc(t, "trail.go", "package trail\n\ntype T struct {\n\t// Name documents Name.\n\tName string // trailing\n\tHidden int // also trailing\n}\n")
+	if len(doc.Comments) != 3 {
+		t.Fatalf("trailing comments = %+v", doc.Comments)
+	}
+	assertDecls(t, doc, []struct {
+		kind  syntax.Kind
+		names []string
+		doc   string
+	}{
+		{syntax.KindPackage, []string{"trail"}, ""},
+		{syntax.KindType, []string{"T"}, ""},
+		{syntax.KindField, []string{"Name"}, "Name documents Name."},
+		{syntax.KindField, []string{"Hidden"}, ""},
+	})
+
+	doc = mustParseDoc(t, "imports.go", "package imports\n\nimport \"fmt\"\n\nimport (\n\t\"io\"\n\talias \"os\"\n)\n\nvar _ = fmt.Append\n")
+	for _, decl := range doc.Declarations {
+		if strings.Contains(strings.Join(decl.Names, " "), "fmt") || decl.Kind == "import" {
+			t.Fatalf("import was indexed: %+v", decl)
+		}
+	}
+	if len(doc.Declarations) != 2 || doc.Declarations[0].Kind != syntax.KindPackage || doc.Declarations[1].Kind != syntax.KindVar {
+		t.Fatalf("imports.go declarations = %+v", doc.Declarations)
+	}
+
+	src := []byte(sample)
+	pkg := docByKind(t, mustParseDoc(t, "sample.go", sample), syntax.KindPackage, "sample")
+	snip, err := syntax.DeclarationContext("sample.go", src, pkg.Range)
+	if err != nil {
+		t.Fatalf("package context: %v", err)
+	}
+	if snip.Text != "package sample" || strings.Contains(snip.Text, "documents") || strings.Contains(snip.Text, "...") {
+		t.Fatalf("package context = %q", snip.Text)
+	}
+	if string(src[snip.Range.Start.Offset:snip.Range.End.Offset]) != snip.Text {
+		t.Fatal("package context is not the original bytes")
+	}
+
+	var body strings.Builder
+	body.WriteString("package p\n\nfunc F() {\n")
+	for i := 0; i < 80; i++ {
+		body.WriteString("\t_ = ")
+		body.WriteString(strconv.Itoa(i))
+		body.WriteByte('\n')
+	}
+	body.WriteString("}\n")
+	longSrc := []byte(body.String())
+	longDoc := mustParseDoc(t, "long.go", body.String())
+	fn := docByKind(t, longDoc, syntax.KindFunction, "F")
+	snip, err = syntax.DeclarationContext("long.go", longSrc, fn.Range)
+	if err != nil {
+		t.Fatalf("function context: %v", err)
+	}
+	if !strings.HasPrefix(snip.Text, "func F() {\n") || strings.Contains(snip.Text, "...") || strings.Contains(snip.Text, "_ = 79") {
+		t.Fatalf("function context = %q", snip.Text)
+	}
+	if snippetLines(snip.Text) > syntax.MaxContextLines {
+		t.Fatalf("function context lines = %d", snippetLines(snip.Text))
+	}
+	if string(longSrc[snip.Range.Start.Offset:snip.Range.End.Offset]) != snip.Text {
+		t.Fatal("function context is not the original bytes")
+	}
+
+	if _, err := syntax.DeclarationContext("sample.go", src, syntax.Range{}); !errors.Is(err, syntax.ErrMalformedDeclaration) {
+		t.Fatalf("malformed = %v", err)
+	}
+	missing := syntax.Range{
+		Start: syntax.Position{Offset: 0, Line: 1, Column: 1},
+		End:   syntax.Position{Offset: 1, Line: 1, Column: 2},
+	}
+	if _, err := syntax.DeclarationContext("sample.go", src, missing); !errors.Is(err, syntax.ErrDeclarationNotFound) {
+		t.Fatalf("missing = %v", err)
+	}
+	if _, err := syntax.Parse("bad.go", []byte("package {\n")); err == nil {
+		t.Fatal("malformed source returned a document")
+	}
+}
+
+func mustParseDoc(t *testing.T, path, src string) *syntax.Document {
+	t.Helper()
+	doc, err := syntax.Parse(path, []byte(src))
+	if err != nil || doc == nil {
+		t.Fatalf("Parse %s: doc=%v err=%v", path, doc, err)
+	}
+	return doc
+}
+
+func assertDecls(t *testing.T, doc *syntax.Document, want []struct {
+	kind  syntax.Kind
+	names []string
+	doc   string
+}) {
+	t.Helper()
+	if len(doc.Declarations) != len(want) {
+		t.Fatalf("declarations = %s", describeDecls(doc))
+	}
+	for i, w := range want {
+		decl := doc.Declarations[i]
+		names := w.names
+		if names == nil {
+			names = []string{}
+		}
+		if decl.Kind != w.kind || !reflect.DeepEqual(decl.Names, names) {
+			t.Fatalf("decl %d = %s %q, want %s %q\n%s", i, decl.Kind, decl.Names, w.kind, names, describeDecls(doc))
+		}
+		if w.doc == "" {
+			if decl.HasDoc {
+				t.Fatalf("decl %d %s has unexpected documentation\n%s", i, decl.Kind, describeDecls(doc))
+			}
+			continue
+		}
+		if !decl.HasDoc {
+			t.Fatalf("decl %d %s has no documentation, want %q", i, decl.Kind, w.doc)
+		}
+		var matched *syntax.Comment
+		for j := range doc.Comments {
+			comment := &doc.Comments[j]
+			if comment.Range == decl.Doc && comment.Text == w.doc {
+				matched = comment
+				break
+			}
+		}
+		if matched == nil {
+			t.Fatalf("decl %d documentation range does not match %q", i, w.doc)
+		}
+	}
+}
+
+func docByKind(t *testing.T, doc *syntax.Document, kind syntax.Kind, name string) syntax.Declaration {
+	t.Helper()
+	for _, decl := range doc.Declarations {
+		if decl.Kind == kind && len(decl.Names) == 1 && decl.Names[0] == name {
+			return decl
+		}
+	}
+	t.Fatalf("no %s %s in %s", kind, name, describeDecls(doc))
+	return syntax.Declaration{}
+}
+
+func describeDecls(doc *syntax.Document) string {
+	var b strings.Builder
+	for i, decl := range doc.Declarations {
+		fmtDecl := decl.Kind
+		b.WriteString(string(fmtDecl))
+		b.WriteString(" ")
+		b.WriteString(strings.Join(decl.Names, ","))
+		if decl.HasDoc {
+			b.WriteString(" doc")
+		}
+		if i+1 < len(doc.Declarations) {
+			b.WriteString("; ")
+		}
+	}
+	return b.String()
+}
+
 func extraOutside(snip syntax.Snippet, comment syntax.Comment) int {
 	extra := 0
 	if comment.Range.Start.Offset > snip.Range.Start.Offset {

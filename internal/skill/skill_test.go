@@ -40,7 +40,7 @@ func TestCanonicalSkill(t *testing.T) {
 	if !bytes.HasPrefix(front, []byte("name: nodex\n")) {
 		t.Fatalf("name line = %q", firstLine(front))
 	}
-	const description = "description: Use Nodex when analyzing, reviewing, locating, or reasoning about source-code comments in a repository. Nodex provides a deterministic comment index, compact comment IDs, and bounded source context.\n"
+	const description = "description: Use Nodex when analyzing, reviewing, locating, or reasoning about source-code comments and declarations in a repository. Nodex provides a deterministic index of comments, declarations, compact IDs, and bounded source context.\n"
 	if !bytes.Contains(front, []byte(description)) {
 		t.Fatalf("description = %q", front)
 	}
@@ -51,25 +51,31 @@ func TestCanonicalSkill(t *testing.T) {
 		t.Fatalf("marker count = %d", bytes.Count(doc, []byte(Marker)))
 	}
 	for _, phrase := range []string{
-		"nodex status",
-		"nodex generate",
-		"nodex comments",
-		"nodex show",
+		"nodex index status",
+		"nodex index generate",
+		"nodex index comments",
+		"nodex index declarations",
+		"nodex index show",
+		"doc: none",
+		"`names:` with no value",
 		"snapshot-local",
 		"IDs may change after regeneration",
 		"previously observed IDs must not be assumed to refer to the same comments",
 		"Nodex collects, indexes, localizes, and retrieves.",
 		"The LLM analyzes.",
 		"not a linter",
-		"Do not infer a source location from `nodex comments`",
+		"does not decide that a declaration requires documentation",
+		"Do not treat `doc: none` as a defect by itself.",
+		"Do not infer a source location from `nodex index comments`",
 		"bounded structural source context",
-		"batch them into one `nodex show` invocation",
+		"batch them into one `nodex index show` invocation",
 		"nodex ignore list",
 		"nodex ignore enable",
 		"nodex ignore disable",
 		"without explicit user intent",
 		"snapshot.json",
 		"comments.jsonl",
+		"declarations.jsonl",
 		".nodex/index/",
 		"do not grep or regex",
 	} {
@@ -78,8 +84,8 @@ func TestCanonicalSkill(t *testing.T) {
 		}
 	}
 	command := bytes.Index(doc, []byte("nodex "))
-	if command < 0 || !bytes.HasPrefix(doc[command:], []byte("nodex status")) {
-		t.Fatal("primary workflow does not begin with nodex status")
+	if command < 0 || !bytes.HasPrefix(doc[command:], []byte("nodex index status")) {
+		t.Fatal("primary workflow does not begin with nodex index status")
 	}
 	lowered := bytes.ToLower(doc)
 	for _, word := range []string{"claude", "codex", "gemini", "grok", "anthropic", "openai", "chatgpt"} {

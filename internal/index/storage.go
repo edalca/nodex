@@ -23,7 +23,7 @@ var (
 
 	// ErrCorrupt means the persisted index is malformed, incomplete, or inconsistent.
 	// Load returns a nil index with this error. A digest mismatch between
-	// snapshot.json and comments.jsonl is corrupt, including when the two
+	// snapshot.json and either derived file is corrupt, including when the
 	// files come from different generations.
 	ErrCorrupt = errors.New("persisted index is corrupt")
 
@@ -31,9 +31,17 @@ var (
 	// by the snapshot's comments digest.
 	ErrDigestMismatch = errors.New("comments digest does not match snapshot")
 
+	// ErrDeclarationDigestMismatch means the declarations file bytes are not
+	// the bytes named by the snapshot's declarations digest.
+	ErrDeclarationDigestMismatch = errors.New("declarations digest does not match snapshot")
+
 	// ErrCountMismatch means the snapshot comment count is not the number of
 	// comment records.
 	ErrCountMismatch = errors.New("comment count does not match snapshot")
+
+	// ErrDeclarationCountMismatch means the snapshot declaration count is not
+	// the number of declaration records.
+	ErrDeclarationCountMismatch = errors.New("declaration count does not match snapshot")
 
 	// ErrUnsupportedSchema means the snapshot schema is not SchemaVersion.
 	ErrUnsupportedSchema = errors.New("snapshot schema is unsupported")
@@ -48,6 +56,19 @@ var (
 
 	// ErrOutOfOrder means persisted comments are not in canonical index order.
 	ErrOutOfOrder = errors.New("comments are not in canonical order")
+
+	// ErrDeclarationIDSequence means a persisted declaration ID is not the
+	// canonical ordinal of its position. The first record is D000001 and
+	// each next record is the next ordinal.
+	ErrDeclarationIDSequence = errors.New("declaration ID is not the canonical ordinal for its position")
+
+	// ErrDeclarationsOutOfOrder means persisted declarations are not in
+	// canonical index order.
+	ErrDeclarationsOutOfOrder = errors.New("declarations are not in canonical order")
+
+	// ErrDanglingDoc means a declaration names a documentation comment that
+	// is not a comment record in the same source.
+	ErrDanglingDoc = errors.New("declaration documentation does not name a comment in the same source")
 
 	errMissingField = errors.New("required field is missing")
 	errNotRegular   = errors.New("not a regular file")
@@ -71,21 +92,22 @@ func (e *UnknownFieldError) Error() string {
 //
 // root is the project root. policyIdentity is the identity of the effective
 // ignore policy. sources are the included supported files. Their order does
-// not change the persisted bytes. idx supplies the comments. A nil index is
-// an empty index.
+// not change the persisted bytes. idx supplies the comments and declarations.
+// A nil index is an empty index.
 //
 // Persist validates and encodes the complete new state before it publishes
 // anything. It creates .nodex/ and .nodex/index/ when they are missing. It
-// does not create or modify .nodex/ignore.json. Comments are written to a
-// temporary file in the index directory, synced, and closed. The snapshot is
-// prepared the same way. comments.jsonl is renamed into place first.
-// snapshot.json is renamed into place last and is the commit marker.
+// does not create or modify .nodex/ignore.json. Comments and declarations
+// are written to temporary files in the index directory, synced, and closed.
+// The snapshot is prepared the same way. comments.jsonl is renamed into
+// place first, then declarations.jsonl. snapshot.json is renamed into place
+// last and is the commit marker.
 //
-// The two renames are not one filesystem transaction. A crash between them
-// can leave a comments file from one generation beside a snapshot from
-// another. Load rejects that pair. On error before the first rename, an
-// existing committed index is left in place. Temporary files created by the
-// failed call are removed.
+// The renames are not one filesystem transaction. A crash between them can
+// leave a derived file from one generation beside a snapshot from another.
+// Load rejects that set. On error before the first rename, an existing
+// committed index is left in place. Temporary files created by the failed
+// call are removed.
 func Persist(root, policyIdentity string, sources []Source, idx *Index) (Snapshot, error) {
 	if root == "" {
 		return Snapshot{}, errors.New("project root is empty")
@@ -101,16 +123,26 @@ func Persist(root, policyIdentity string, sources []Source, idx *Index) (Snapsho
 	if err := validateEntries(entries); err != nil {
 		return Snapshot{}, err
 	}
+	decls := declarationsOf(idx)
+	if err := validateDeclarations(decls, entries); err != nil {
+		return Snapshot{}, err
+	}
 	commentBytes, err := encodeComments(entries)
 	if err != nil {
 		return Snapshot{}, err
 	}
+	declarationBytes, err := encodeDeclarations(decls)
+	if err != nil {
+		return Snapshot{}, err
+	}
 	snap := Snapshot{
-		Schema:         SchemaVersion,
-		PolicyIdentity: policyIdentity,
-		CommentsDigest: DigestBytes(commentBytes),
-		CommentCount:   len(entries),
-		Sources:        ordered,
+		Schema:             SchemaVersion,
+		PolicyIdentity:     policyIdentity,
+		CommentsDigest:     DigestBytes(commentBytes),
+		CommentCount:       len(entries),
+		DeclarationsDigest: DigestBytes(declarationBytes),
+		DeclarationCount:   len(decls),
+		Sources:            ordered,
 	}
 	snapshotBytes, err := encodeSnapshot(snap)
 	if err != nil {
@@ -123,7 +155,7 @@ func Persist(root, policyIdentity string, sources []Source, idx *Index) (Snapsho
 	if err != nil {
 		return Snapshot{}, err
 	}
-	if err := publish(indexDir, commentBytes, snapshotBytes); err != nil {
+	if err := publish(indexDir, commentBytes, declarationBytes, snapshotBytes); err != nil {
 		return Snapshot{}, err
 	}
 	snap.Sources = append([]Source(nil), ordered...)
@@ -133,12 +165,13 @@ func Persist(root, policyIdentity string, sources []Source, idx *Index) (Snapsho
 // Load reads the committed index under the project root.
 //
 // When snapshot.json is absent, Load returns a nil index, the zero snapshot,
-// and ErrAbsent. A snapshot that exists without comments.jsonl, a comments
-// digest that does not match the file, a comment count that does not match
-// the records, or any record that Build would reject returns a nil index and
-// an error wrapping ErrCorrupt. Load does not return a partial index.
+// and ErrAbsent. A snapshot that exists without comments.jsonl or
+// declarations.jsonl, a digest that does not match its file, a count that
+// does not match the records, or any record that Build would reject returns
+// a nil index and an error wrapping ErrCorrupt. Load does not return a
+// partial index.
 //
-// On success the index is immutable. Entries returns a copy.
+// On success the index is immutable. Entries and Declarations return copies.
 func Load(root string) (*Index, Snapshot, error) {
 	if root == "" {
 		return nil, Snapshot{}, errors.New("project root is empty")
@@ -174,7 +207,27 @@ func Load(root string) (*Index, Snapshot, error) {
 	if len(entries) != snap.CommentCount {
 		return nil, Snapshot{}, fmt.Errorf("%w: %w", ErrCorrupt, ErrCountMismatch)
 	}
-	return indexFromEntries(entries), snap, nil
+	declarations, err := readCommitted(root, DeclarationsPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, Snapshot{}, fmt.Errorf("%w: %s is missing", ErrCorrupt, DeclarationsPath)
+		}
+		return nil, Snapshot{}, fmt.Errorf("%w: %w", ErrCorrupt, err)
+	}
+	if DigestBytes(declarations) != snap.DeclarationsDigest {
+		return nil, Snapshot{}, fmt.Errorf("%w: %w", ErrCorrupt, ErrDeclarationDigestMismatch)
+	}
+	decls, err := parseDeclarations(declarations)
+	if err != nil {
+		return nil, Snapshot{}, err
+	}
+	if len(decls) != snap.DeclarationCount {
+		return nil, Snapshot{}, fmt.Errorf("%w: %w", ErrCorrupt, ErrDeclarationCountMismatch)
+	}
+	if err := validateDeclarations(decls, entries); err != nil {
+		return nil, Snapshot{}, fmt.Errorf("%w: %w", ErrCorrupt, err)
+	}
+	return indexFrom(entries, decls), snap, nil
 }
 
 func entriesOf(idx *Index) []Entry {
@@ -186,14 +239,31 @@ func entriesOf(idx *Index) []Entry {
 	return out
 }
 
-func indexFromEntries(entries []Entry) *Index {
+func declarationsOf(idx *Index) []Declaration {
+	if idx == nil || len(idx.decls) == 0 {
+		return []Declaration{}
+	}
+	out := make([]Declaration, len(idx.decls))
+	for i, decl := range idx.decls {
+		out[i] = copyDeclaration(decl)
+	}
+	return out
+}
+
+func indexFrom(entries []Entry, decls []Declaration) *Index {
 	stored := make([]Entry, len(entries))
 	copy(stored, entries)
 	byID := make(map[uint64]int, len(stored))
 	for i, entry := range stored {
 		byID[entry.ID.n] = i
 	}
-	return &Index{entries: stored, byID: byID}
+	storedDecls := make([]Declaration, len(decls))
+	declByID := make(map[uint64]int, len(decls))
+	for i, decl := range decls {
+		storedDecls[i] = copyDeclaration(decl)
+		declByID[decl.ID.n] = i
+	}
+	return &Index{entries: stored, byID: byID, decls: storedDecls, declByID: declByID}
 }
 
 func ensureIndexDir(root string) (string, error) {
@@ -226,9 +296,10 @@ func mkdirPlain(path string) error {
 	return nil
 }
 
-// publish installs the two files. comments.jsonl is renamed first.
-// snapshot.json is renamed last. Temporary files stay in indexDir.
-func publish(indexDir string, comments, snapshot []byte) error {
+// publish installs the derived files. comments.jsonl is renamed first,
+// declarations.jsonl next, and snapshot.json last. Temporary files stay in
+// indexDir until their rename succeeds.
+func publish(indexDir string, comments, declarations, snapshot []byte) error {
 	commentsTemp, err := writeTemp(indexDir, ".comments-*", comments)
 	if err != nil {
 		return err
@@ -237,6 +308,16 @@ func publish(indexDir string, comments, snapshot []byte) error {
 	defer func() {
 		if !commentsKept {
 			_ = os.Remove(commentsTemp)
+		}
+	}()
+	declarationsTemp, err := writeTemp(indexDir, ".declarations-*", declarations)
+	if err != nil {
+		return err
+	}
+	declarationsKept := false
+	defer func() {
+		if !declarationsKept {
+			_ = os.Remove(declarationsTemp)
 		}
 	}()
 	snapshotTemp, err := writeTemp(indexDir, ".snapshot-*", snapshot)
@@ -254,13 +335,17 @@ func publish(indexDir string, comments, snapshot []byte) error {
 		return err
 	}
 	commentsKept = true
+	if err := os.Rename(declarationsTemp, filepath.Join(indexDir, "declarations.jsonl")); err != nil {
+		return err
+	}
+	declarationsKept = true
 	if err := os.Rename(snapshotTemp, filepath.Join(indexDir, "snapshot.json")); err != nil {
 		return err
 	}
 	snapshotKept = true
 	// The directory sync publishes the renames. It is not a second transaction
-	// around the two files. A crash between the renames is still detectable
-	// because the snapshot digest will not match the comments file.
+	// around the files. A crash between the renames is still detectable
+	// because the snapshot digests will not match the derived files.
 	return syncDir(indexDir)
 }
 
@@ -329,11 +414,13 @@ func readCommitted(root, logical string) ([]byte, error) {
 }
 
 type snapshotDTO struct {
-	Schema         int         `json:"schema"`
-	PolicyIdentity string      `json:"policy_identity"`
-	CommentsDigest string      `json:"comments_digest"`
-	CommentCount   int         `json:"comment_count"`
-	Sources        []sourceDTO `json:"sources"`
+	Schema             int         `json:"schema"`
+	PolicyIdentity     string      `json:"policy_identity"`
+	CommentsDigest     string      `json:"comments_digest"`
+	CommentCount       int         `json:"comment_count"`
+	DeclarationsDigest string      `json:"declarations_digest"`
+	DeclarationCount   int         `json:"declaration_count"`
+	Sources            []sourceDTO `json:"sources"`
 }
 
 type sourceDTO struct {
@@ -350,6 +437,16 @@ type entryDTO struct {
 	Text     string   `json:"text"`
 }
 
+type declarationDTO struct {
+	ID       string   `json:"id"`
+	Path     string   `json:"path"`
+	Language string   `json:"language"`
+	Kind     string   `json:"kind"`
+	Names    []string `json:"names"`
+	Range    rangeDTO `json:"range"`
+	Doc      *string  `json:"doc"`
+}
+
 type rangeDTO struct {
 	Start positionDTO `json:"start"`
 	End   positionDTO `json:"end"`
@@ -363,11 +460,13 @@ type positionDTO struct {
 
 func encodeSnapshot(snap Snapshot) ([]byte, error) {
 	dto := snapshotDTO{
-		Schema:         snap.Schema,
-		PolicyIdentity: snap.PolicyIdentity,
-		CommentsDigest: snap.CommentsDigest,
-		CommentCount:   snap.CommentCount,
-		Sources:        make([]sourceDTO, len(snap.Sources)),
+		Schema:             snap.Schema,
+		PolicyIdentity:     snap.PolicyIdentity,
+		CommentsDigest:     snap.CommentsDigest,
+		CommentCount:       snap.CommentCount,
+		DeclarationsDigest: snap.DeclarationsDigest,
+		DeclarationCount:   snap.DeclarationCount,
+		Sources:            make([]sourceDTO, len(snap.Sources)),
 	}
 	for i, src := range snap.Sources {
 		dto.Sources[i] = sourceDTO{Path: src.Path, Language: string(src.Language), Digest: src.Digest}
@@ -392,6 +491,40 @@ func encodeComments(entries []Entry) ([]byte, error) {
 				End:   positionDTO{Offset: entry.Range.End.Offset, Line: entry.Range.End.Line, Column: entry.Range.End.Column},
 			},
 			Text: entry.Text,
+		}
+		if err := enc.Encode(dto); err != nil {
+			return nil, err
+		}
+	}
+	return buf.Bytes(), nil
+}
+
+func encodeDeclarations(decls []Declaration) ([]byte, error) {
+	if len(decls) == 0 {
+		return []byte{}, nil
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	for _, decl := range decls {
+		names := decl.Names
+		if names == nil {
+			names = []string{}
+		}
+		dto := declarationDTO{
+			ID:       decl.ID.String(),
+			Path:     decl.Path,
+			Language: string(decl.Language),
+			Kind:     string(decl.Kind),
+			Names:    names,
+			Range: rangeDTO{
+				Start: positionDTO{Offset: decl.Range.Start.Offset, Line: decl.Range.Start.Line, Column: decl.Range.Start.Column},
+				End:   positionDTO{Offset: decl.Range.End.Offset, Line: decl.Range.End.Line, Column: decl.Range.End.Column},
+			},
+		}
+		if decl.Doc.Valid() {
+			text := decl.Doc.String()
+			dto.Doc = &text
 		}
 		if err := enc.Encode(dto); err != nil {
 			return nil, err
@@ -426,10 +559,10 @@ func decodeSnapshot(data []byte) (Snapshot, error) {
 		}
 		return Snapshot{}, fmt.Errorf("%w: %v", ErrTrailingData, err)
 	}
-	if err := rejectUnknown(fields, "schema", "policy_identity", "comments_digest", "comment_count", "sources"); err != nil {
+	if err := rejectUnknown(fields, "schema", "policy_identity", "comments_digest", "comment_count", "declarations_digest", "declaration_count", "sources"); err != nil {
 		return Snapshot{}, err
 	}
-	for _, key := range []string{"schema", "policy_identity", "comments_digest", "comment_count", "sources"} {
+	for _, key := range []string{"schema", "policy_identity", "comments_digest", "comment_count", "declarations_digest", "declaration_count", "sources"} {
 		if _, ok := fields[key]; !ok {
 			return Snapshot{}, fmt.Errorf("%w: %s", errMissingField, key)
 		}
@@ -455,16 +588,29 @@ func decodeSnapshot(data []byte) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("comment_count: %w", err)
 	}
+	declarationsDigest, err := decodeString(fields["declarations_digest"])
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("declarations_digest: %w", err)
+	}
+	if err := validateDigest(declarationsDigest); err != nil {
+		return Snapshot{}, fmt.Errorf("declarations_digest: %w", err)
+	}
+	declarationCount, err := exactNonNegativeInt(fields["declaration_count"])
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("declaration_count: %w", err)
+	}
 	sources, err := decodeSources(fields["sources"])
 	if err != nil {
 		return Snapshot{}, err
 	}
 	return Snapshot{
-		Schema:         SchemaVersion,
-		PolicyIdentity: policy,
-		CommentsDigest: commentsDigest,
-		CommentCount:   count,
-		Sources:        sources,
+		Schema:             SchemaVersion,
+		PolicyIdentity:     policy,
+		CommentsDigest:     commentsDigest,
+		CommentCount:       count,
+		DeclarationsDigest: declarationsDigest,
+		DeclarationCount:   declarationCount,
+		Sources:            sources,
 	}, nil
 }
 
@@ -778,5 +924,191 @@ func compareEntry(a, b Entry) int {
 	return compareCollected(
 		collected{path: a.Path, rng: a.Range},
 		collected{path: b.Path, rng: b.Range},
+	)
+}
+
+func parseDeclarations(data []byte) ([]Declaration, error) {
+	if len(data) == 0 {
+		return []Declaration{}, nil
+	}
+	if data[len(data)-1] != '\n' {
+		return nil, fmt.Errorf("%w: declarations file does not end with a newline", ErrCorrupt)
+	}
+	decls := make([]Declaration, 0)
+	lineNo := 0
+	for len(data) > 0 {
+		i := bytes.IndexByte(data, '\n')
+		if i < 0 {
+			return nil, fmt.Errorf("%w: declarations file does not end with a newline", ErrCorrupt)
+		}
+		line := data[:i]
+		data = data[i+1:]
+		lineNo++
+		if len(bytes.TrimSpace(line)) == 0 {
+			return nil, fmt.Errorf("%w: declarations line %d is blank", ErrCorrupt, lineNo)
+		}
+		decl, err := parseDeclarationLine(line)
+		if err != nil {
+			return nil, fmt.Errorf("%w: declarations line %d: %w", ErrCorrupt, lineNo, err)
+		}
+		decls = append(decls, decl)
+	}
+	return decls, nil
+}
+
+func parseDeclarationLine(line []byte) (Declaration, error) {
+	dec := json.NewDecoder(bytes.NewReader(line))
+	var fields map[string]json.RawMessage
+	if err := dec.Decode(&fields); err != nil {
+		return Declaration{}, err
+	}
+	var extra json.RawMessage
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return Declaration{}, ErrTrailingData
+		}
+		return Declaration{}, fmt.Errorf("%w: %v", ErrTrailingData, err)
+	}
+	if err := rejectUnknown(fields, "id", "path", "language", "kind", "names", "range", "doc"); err != nil {
+		return Declaration{}, err
+	}
+	for _, key := range []string{"id", "path", "language", "kind", "names", "range", "doc"} {
+		if _, ok := fields[key]; !ok {
+			return Declaration{}, fmt.Errorf("%w: %s", errMissingField, key)
+		}
+	}
+	idText, err := decodeString(fields["id"])
+	if err != nil {
+		return Declaration{}, fmt.Errorf("id: %w", err)
+	}
+	id, err := ParseDeclID(idText)
+	if err != nil {
+		return Declaration{}, err
+	}
+	pathText, err := decodeString(fields["path"])
+	if err != nil {
+		return Declaration{}, fmt.Errorf("path: %w", err)
+	}
+	language, err := decodeString(fields["language"])
+	if err != nil {
+		return Declaration{}, fmt.Errorf("language: %w", err)
+	}
+	kind, err := decodeString(fields["kind"])
+	if err != nil {
+		return Declaration{}, fmt.Errorf("kind: %w", err)
+	}
+	names, err := decodeNames(fields["names"])
+	if err != nil {
+		return Declaration{}, err
+	}
+	rng, err := decodeRange(fields["range"])
+	if err != nil {
+		return Declaration{}, fmt.Errorf("range: %w", err)
+	}
+	doc, err := decodeDocID(fields["doc"])
+	if err != nil {
+		return Declaration{}, fmt.Errorf("doc: %w", err)
+	}
+	return Declaration{
+		ID:       id,
+		Path:     pathText,
+		Language: syntax.Language(language),
+		Kind:     syntax.Kind(kind),
+		Names:    names,
+		Range:    rng,
+		Doc:      doc,
+	}, nil
+}
+
+func decodeNames(raw json.RawMessage) ([]string, error) {
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, errors.New("names is null")
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil, errors.New("names must be an array")
+	}
+	names := make([]string, len(items))
+	for i, item := range items {
+		text, err := decodeString(item)
+		if err != nil {
+			return nil, fmt.Errorf("names[%d]: %w", i, err)
+		}
+		if text == "" {
+			return nil, fmt.Errorf("names[%d] is empty", i)
+		}
+		names[i] = text
+	}
+	return names, nil
+}
+
+func decodeDocID(raw json.RawMessage) (ID, error) {
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return ID{}, nil
+	}
+	text, err := decodeString(raw)
+	if err != nil {
+		return ID{}, errors.New("must be a comment ID or null")
+	}
+	id, err := ParseID(text)
+	if err != nil {
+		return ID{}, err
+	}
+	return id, nil
+}
+
+func validateDeclarations(decls []Declaration, comments []Entry) error {
+	byComment := make(map[uint64]Entry, len(comments))
+	for _, comment := range comments {
+		byComment[comment.ID.n] = comment
+	}
+	seen := make(map[declKey]int, len(decls))
+	for i, decl := range decls {
+		want := uint64(i) + 1
+		if !decl.ID.Valid() || decl.ID.n != want {
+			return fmt.Errorf("declaration [%d]: %w", i, ErrDeclarationIDSequence)
+		}
+		if err := logicalPathError(decl.Path); err != nil {
+			return fmt.Errorf("declaration [%d] path %q: %w", i, decl.Path, err)
+		}
+		if !utf8.ValidString(decl.Path) || !utf8.ValidString(string(decl.Language)) || !utf8.ValidString(string(decl.Kind)) {
+			return fmt.Errorf("declaration [%d]: text is not valid UTF-8", i)
+		}
+		if decl.Language == "" {
+			return fmt.Errorf("declaration [%d]: %w", i, ErrEmptyLanguage)
+		}
+		if decl.Kind == "" {
+			return fmt.Errorf("declaration [%d]: %w", i, ErrEmptyKind)
+		}
+		if err := validateRange(decl.Range); err != nil {
+			return fmt.Errorf("declaration [%d]: %w", i, err)
+		}
+		for n, name := range decl.Names {
+			if name == "" || !utf8.ValidString(name) {
+				return fmt.Errorf("declaration [%d]: name [%d] is invalid", i, n)
+			}
+		}
+		if decl.Doc.Valid() {
+			comment, ok := byComment[decl.Doc.n]
+			if !ok || comment.Path != decl.Path {
+				return fmt.Errorf("declaration [%d]: %w", i, ErrDanglingDoc)
+			}
+		}
+		key := declKey{rng: decl.Range, kind: decl.Kind}
+		if prev, ok := seen[key]; ok && decls[prev].Path == decl.Path {
+			return &DuplicateDeclarationError{Path: decl.Path, Index: prev, Other: i, Range: decl.Range}
+		}
+		seen[key] = i
+		if i > 0 && compareStoredDecl(decls[i-1], decl) >= 0 {
+			return fmt.Errorf("declaration [%d]: %w", i, ErrDeclarationsOutOfOrder)
+		}
+	}
+	return nil
+}
+
+func compareStoredDecl(a, b Declaration) int {
+	return compareDecl(
+		collectedDecl{path: a.Path, kind: a.Kind, rng: a.Range},
+		collectedDecl{path: b.Path, kind: b.Kind, rng: b.Range},
 	)
 }

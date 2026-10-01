@@ -14,11 +14,11 @@ import (
 
 // errNoGeneratedIndex means a command was asked to read an index that has
 // not been generated.
-var errNoGeneratedIndex = errors.New("no generated index; run nodex generate")
+var errNoGeneratedIndex = errors.New("no generated index; run nodex index generate")
 
 // errStaleIndex means the generated index does not match the current
 // project inputs. The index is not regenerated.
-var errStaleIndex = errors.New("index is stale; run nodex generate")
+var errStaleIndex = errors.New("index is stale; run nodex index generate")
 
 // projectState is the current project input used to compare a snapshot.
 //

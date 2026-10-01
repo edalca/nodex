@@ -26,6 +26,9 @@ const (
 	// CommentsPath is the logical path of the persisted comments.
 	CommentsPath = IndexDir + "/comments.jsonl"
 
+	// DeclarationsPath is the logical path of the persisted declarations.
+	DeclarationsPath = IndexDir + "/declarations.jsonl"
+
 	digestPrefix = "sha256:"
 )
 
@@ -76,14 +79,18 @@ func DigestBytes(content []byte) string {
 // Schema is SchemaVersion. PolicyIdentity is the deterministic identity of
 // the effective ignore policy. CommentsDigest is the SHA-256 identity of the
 // exact comments.jsonl bytes. CommentCount is the number of comment records
-// in that file. Sources lists every included supported source file and no
-// other file, ordered by logical path.
+// in that file. DeclarationsDigest is the SHA-256 identity of the exact
+// declarations.jsonl bytes. DeclarationCount is the number of declaration
+// records in that file. Sources lists every included supported source file
+// and no other file, ordered by logical path.
 type Snapshot struct {
-	Schema         int
-	PolicyIdentity string
-	CommentsDigest string
-	CommentCount   int
-	Sources        []Source
+	Schema             int
+	PolicyIdentity     string
+	CommentsDigest     string
+	CommentCount       int
+	DeclarationsDigest string
+	DeclarationCount   int
+	Sources            []Source
 }
 
 // Current reports whether snap was produced from policyIdentity and sources.
@@ -91,8 +98,8 @@ type Snapshot struct {
 // A snapshot is current only when the policy identity is equal and the
 // source fingerprints are equal. Fingerprints are ordered by logical path
 // before the comparison, so the order of sources does not matter. Comment
-// text, comment count, the comments digest, and modification times are not
-// compared.
+// text, declaration facts, the derived-file digests and counts, and
+// modification times are not compared.
 func Current(snap Snapshot, policyIdentity string, sources []Source) bool {
 	if snap.PolicyIdentity != policyIdentity {
 		return false

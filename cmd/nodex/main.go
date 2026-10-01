@@ -1,21 +1,23 @@
-// Command nodex indexes a project's comments and reports that index.
+// Command nodex indexes a project's comments and declarations and reports
+// that index.
 //
 // The project root is resolved from the process working directory unless
-// --root is set before the command. generate reads the effective ignore
-// policy, discovers included files, applies enabled presets, and persists an
-// index of the remaining supported source files. comments writes the current
-// index as compact Markdown. status reports whether that index is missing,
-// current, stale, or corrupt. show resolves snapshot-local comment IDs from
-// a current index to their source location and a bounded structural context.
+// --root is set before the command. index generate reads the effective
+// ignore policy, discovers included files, applies enabled presets, and
+// persists an index of the remaining supported source files. index comments
+// writes the current comment corpus as compact Markdown. index declarations
+// writes the current declaration facts as compact Markdown. index status
+// reports whether that index is missing, current, stale, or corrupt.
+// index show resolves snapshot-local comment and declaration IDs from a
+// current index to their source location and a bounded structural context.
 // version prints the source-defined product version and the build metadata.
 // ignore lists and edits the project ignore document. skill prints the
 // canonical Agent Skill and installs or removes that same document for one
-// named target. comments, status, and
-// show do not regenerate an index. version, ignore presets, skill targets,
-// and skill show do not open a project. Project-local skill install and
-// skill uninstall use the same root resolution as the other project
-// commands. With --global they use the user home directory and do not
-// resolve a project.
+// named target. The index commands do not regenerate an index except for
+// index generate. version, ignore presets, skill targets, and skill show do
+// not open a project. Project-local skill install and skill uninstall use
+// the same root resolution as the other project commands. With --global they
+// use the user home directory and do not resolve a project.
 package main
 
 import (
@@ -30,7 +32,7 @@ import (
 	"github.com/edalca/nodex/internal/syntax"
 )
 
-const commandUsage = "usage: nodex [--root <path>] generate|comments|status|show|version|ignore|skill"
+const commandUsage = "usage: nodex [--root <path>] index|version|ignore|skill"
 
 // invocation is one parsed command line.
 //
@@ -69,60 +71,12 @@ func run(args []string, getwd func() (string, error), stdout, stderr io.Writer) 
 		return dispatchIgnore(inv, inv.args[1:], getwd, stdout, stderr)
 	case "skill":
 		return dispatchSkill(inv, inv.args[1:], getwd, stdout, stderr)
-	case "generate", "comments", "status", "show":
+	case "index":
+		return dispatchIndex(inv, inv.args[1:], getwd, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", inv.args[0])
 		return errors.New("usage")
 	}
-	if inv.args[0] == "show" {
-		if len(inv.args) == 1 {
-			fmt.Fprintln(stderr, "show requires a comment ID")
-			return errors.New("usage")
-		}
-	} else if len(inv.args) != 1 {
-		fmt.Fprintf(stderr, "%s takes no arguments\n", inv.args[0])
-		return errors.New("usage")
-	}
-	dir, err := locate(inv, getwd)
-	if err != nil {
-		fmt.Fprintf(stderr, "nodex: %v\n", err)
-		return err
-	}
-	switch inv.args[0] {
-	case "generate":
-		nComments, nSources, err := generate(dir)
-		if err != nil {
-			fmt.Fprintf(stderr, "nodex: %v\n", err)
-			return err
-		}
-		fmt.Fprintf(stdout, "generated %d %s from %d %s\n",
-			nComments, countNoun(nComments, "comment", "comments"),
-			nSources, countNoun(nSources, "source file", "source files"))
-		return nil
-	case "comments":
-		text, err := comments(dir)
-		if err != nil {
-			fmt.Fprintf(stderr, "nodex: %v\n", err)
-			return err
-		}
-		return writeStdout(stdout, stderr, text)
-	case "status":
-		text, err := status(dir)
-		if err != nil {
-			fmt.Fprintf(stderr, "nodex: %v\n", err)
-			return err
-		}
-		return writeStdout(stdout, stderr, text)
-	case "show":
-		text, err := show(dir, inv.args[1:])
-		if err != nil {
-			fmt.Fprintf(stderr, "nodex: %v\n", err)
-			return err
-		}
-		return writeStdout(stdout, stderr, text)
-	}
-	fmt.Fprintf(stderr, "unknown command %q\n", inv.args[0])
-	return errors.New("usage")
 }
 
 func parseArgs(args []string) (invocation, error) {
@@ -206,25 +160,25 @@ func countNoun(n int, one, many string) string {
 	return many
 }
 
-func generate(dir string) (int, int, error) {
+func generate(dir string) (int, int, int, error) {
 	state, err := openProjectState(dir)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	docs := make([]*syntax.Document, len(state.files))
 	for i, file := range state.files {
 		doc, err := syntax.Parse(file.source.Path, file.body)
 		if err != nil {
-			return 0, 0, err
+			return 0, 0, 0, err
 		}
 		docs[i] = doc
 	}
 	idx, err := index.Build(docs)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	if _, err := index.Persist(state.root, state.policy.Identity(), state.sources(), idx); err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
-	return idx.Len(), len(state.files), nil
+	return idx.Len(), idx.DeclarationLen(), len(state.files), nil
 }
