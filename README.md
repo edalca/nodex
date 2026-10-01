@@ -401,16 +401,12 @@ nodex version
 A normal build prints:
 
 ```text
-nodex 0.1.0-beta.1
-commit unknown
-built unknown
+nodex <version>
+commit <commit>
+built <build-date>
 ```
 
-The product version is defined directly in the source:
-
-```go
-const version = "0.1.0-beta.1"
-```
+The product version is defined directly in the source at `cmd/nodex/version.go`.
 
 Changing the Nodex version means changing that value in the code.
 
