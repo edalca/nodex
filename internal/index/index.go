@@ -37,15 +37,15 @@
 // then the physical end offset, then the declaration kind when those ranges
 // are equal. Kind is a structural tie-breaker. Documentation text, names,
 // and the order of the input slice are not keys. A declaration's
-// documentation comment is the comment in the same document whose physical
-// range is exactly the range the parser associated. The declaration stores
-// that comment's ID. It does not store the comment text. A range that
+// documentation relationships resolve each parser-owned physical range to
+// exactly one comment in the same document. The declaration stores those
+// comment IDs in physical source order, without comment text. A range that
 // matches no comment in that document is an indexing failure, and Build
 // returns no index. A declaration with no associated documentation comment
-// is stored with an absent documentation ID.
+// is stored with an empty, non-nil Docs collection. Duplicate ranges fail.
 //
 // Persist writes a finished index under the workspace base. The persisted
-// state is schema 1 and three files: comments.jsonl, declarations.jsonl,
+// state uses SchemaVersion and three files: comments.jsonl, declarations.jsonl,
 // then snapshot.json. snapshot.json is the commit marker. It records the
 // caller-supplied ignore policy identity, the SHA-256 digest and count of
 // each derived file, and one fingerprint for each included source file. A
@@ -119,6 +119,12 @@ var (
 
 	// ErrEmptyKind is returned when a declaration kind is empty.
 	ErrEmptyKind = errors.New("declaration kind is empty")
+
+	// ErrDuplicateDoc means a declaration repeats a direct documentation range or ID.
+	ErrDuplicateDoc = errors.New("duplicate direct documentation relationship")
+
+	// ErrDocsOutOfOrder means persisted documentation IDs are not in physical source order.
+	ErrDocsOutOfOrder = errors.New("direct documentation relationships are not in physical source order")
 )
 
 // NilDocumentError reports a nil document in the slice passed to Build.
@@ -260,10 +266,10 @@ func (e *DuplicateDeclarationError) Error() string {
 // UnresolvedDocError reports a documentation range that is not the physical
 // range of a comment in the same document. Build returns no index.
 type UnresolvedDocError struct {
-	Path  string
-	Index int
-	Range syntax.Range
-	Doc   syntax.Range
+	Path     string
+	Index    int
+	Range    syntax.Range
+	DocRange syntax.Range
 }
 
 // Error reports the declaration and the documentation range that did not match.
@@ -272,7 +278,7 @@ func (e *UnresolvedDocError) Error() string {
 		return "documentation range does not match a comment"
 	}
 	return fmt.Sprintf("%s: declaration [%d] bytes [%d,%d) documentation range [%d,%d) does not match a comment",
-		e.Path, e.Index, e.Range.Start.Offset, e.Range.End.Offset, e.Doc.Start.Offset, e.Doc.End.Offset)
+		e.Path, e.Index, e.Range.Start.Offset, e.Range.End.Offset, e.DocRange.Start.Offset, e.DocRange.End.Offset)
 }
 
 // IDError reports text that is not a comment ID.
@@ -477,10 +483,10 @@ type Entry struct {
 // Declaration is one indexed declaration.
 //
 // Path, Language, Kind, Names, and Range are copies of the document values.
-// ID is assigned from the canonical declaration order. Doc is the ID of the
-// directly associated documentation comment in the same source. The zero Doc
-// means the parser recorded no such comment. Doc does not carry the comment
-// text. A declaration does not carry raw source or a syntax tree.
+// ID is assigned from the canonical declaration order. Docs contains the IDs
+// of zero or more direct parser-owned documentation comments in the same source,
+// ordered by physical position, without duplicates. Docs is non-nil, including
+// when empty. A declaration carries no comment text, raw source, or syntax tree.
 type Declaration struct {
 	ID       DeclID
 	Path     string
@@ -488,7 +494,7 @@ type Declaration struct {
 	Kind     syntax.Kind
 	Names    []string
 	Range    syntax.Range
-	Doc      ID
+	Docs     []ID
 }
 
 // Index is an immutable in-memory collection of indexed comments and
@@ -584,6 +590,9 @@ func copyDeclaration(d Declaration) Declaration {
 	names := make([]string, len(d.Names))
 	copy(names, d.Names)
 	d.Names = names
+	docs := make([]ID, len(d.Docs))
+	copy(docs, d.Docs)
+	d.Docs = docs
 	return d
 }
 
@@ -637,19 +646,17 @@ func Build(docs []*syntax.Document) (*Index, error) {
 		commentAt[positionKey{path: item.path, rng: item.rng}] = id
 	}
 	for i := range declItems {
-		if !declItems[i].hasDoc {
-			continue
-		}
-		id, ok := commentAt[positionKey{path: declItems[i].path, rng: declItems[i].doc}]
-		if !ok {
-			return nil, &UnresolvedDocError{
-				Path:  declItems[i].path,
-				Index: declItems[i].index,
-				Range: declItems[i].rng,
-				Doc:   declItems[i].doc,
+		item := &declItems[i]
+		item.docIDs = make([]ID, len(item.docs))
+		for j, rng := range item.docs {
+			id, ok := commentAt[positionKey{path: item.path, rng: rng}]
+			if !ok {
+				return nil, &UnresolvedDocError{
+					Path: item.path, Index: item.index, Range: item.rng, DocRange: rng,
+				}
 			}
+			item.docIDs[j] = id
 		}
-		declItems[i].docID = id
 	}
 	slices.SortFunc(declItems, compareDecl)
 	decls := make([]Declaration, len(declItems))
@@ -671,7 +678,7 @@ func Build(docs []*syntax.Document) (*Index, error) {
 			Kind:     item.kind,
 			Names:    item.names,
 			Range:    item.rng,
-			Doc:      item.docID,
+			Docs:     item.docIDs,
 		}
 		declByID[n] = i
 	}
@@ -715,9 +722,8 @@ type collectedDecl struct {
 	kind     syntax.Kind
 	names    []string
 	rng      syntax.Range
-	hasDoc   bool
-	doc      syntax.Range
-	docID    ID
+	docs     []syntax.Range
+	docIDs   []ID
 	index    int
 }
 
@@ -740,6 +746,11 @@ func collectDecls(doc *syntax.Document) ([]collectedDecl, error) {
 		seen[key] = j
 		names := make([]string, len(decl.Names))
 		copy(names, decl.Names)
+		docs := make([]syntax.Range, len(decl.Docs))
+		copy(docs, decl.Docs)
+		slices.SortFunc(docs, func(a, b syntax.Range) int {
+			return compareCollected(collected{rng: a}, collected{rng: b})
+		})
 		item := collectedDecl{
 			path:     doc.Path,
 			language: doc.Language,
@@ -747,10 +758,7 @@ func collectDecls(doc *syntax.Document) ([]collectedDecl, error) {
 			names:    names,
 			rng:      decl.Range,
 			index:    j,
-			hasDoc:   decl.HasDoc,
-		}
-		if decl.HasDoc {
-			item.doc = decl.Doc
+			docs:     docs,
 		}
 		items = append(items, item)
 	}
@@ -775,10 +783,15 @@ func validateDeclFact(decl syntax.Declaration) error {
 			return fmt.Errorf("name [%d] is not valid UTF-8", i)
 		}
 	}
-	if decl.HasDoc {
-		if err := validateRange(decl.Doc); err != nil {
-			return err
+	seenDocs := make(map[syntax.Range]bool, len(decl.Docs))
+	for i, rng := range decl.Docs {
+		if err := validateRange(rng); err != nil {
+			return fmt.Errorf("docs[%d]: %w", i, err)
 		}
+		if seenDocs[rng] {
+			return fmt.Errorf("docs[%d]: %w", i, ErrDuplicateDoc)
+		}
+		seenDocs[rng] = true
 	}
 	return nil
 }

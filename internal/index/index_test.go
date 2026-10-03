@@ -1543,16 +1543,16 @@ func TestDeclarationIndex(t *testing.T) {
 			t.Fatalf("decl %d = %s %s %q", i, decl.ID, decl.Kind, decl.Names)
 		}
 		if wantDoc[i] == "" {
-			if decl.Doc.Valid() {
-				t.Fatalf("decl %d has doc %s", i, decl.Doc)
+			if decl.Docs == nil || len(decl.Docs) != 0 {
+				t.Fatalf("decl %d has doc %s", i, decl.Docs)
 			}
 			continue
 		}
 		commentID := byText[wantDoc[i]]
-		if !commentID.Valid() || decl.Doc != commentID {
-			t.Fatalf("decl %d doc = %s, want %s for %q", i, decl.Doc, commentID, wantDoc[i])
+		if !commentID.Valid() || len(decl.Docs) != 1 || decl.Docs[0] != commentID {
+			t.Fatalf("decl %d doc = %s, want %s for %q", i, decl.Docs, commentID, wantDoc[i])
 		}
-		entry, ok := idx.Lookup(decl.Doc)
+		entry, ok := idx.Lookup(decl.Docs[0])
 		if !ok || entry.Path != decl.Path || entry.Text != wantDoc[i] {
 			t.Fatalf("mapped comment = %+v ok=%v", entry, ok)
 		}
@@ -1574,11 +1574,11 @@ func TestDeclarationIndex(t *testing.T) {
 	if snap.CommentCount != 5 || snap.DeclarationCount != 10 || snap.CommentsDigest != index.DigestBytes(commentBytes) || snap.DeclarationsDigest != index.DigestBytes(declBytes) {
 		t.Fatalf("snapshot counts = %+v", snap)
 	}
-	if !bytes.Contains(declBytes, []byte(`"names":["A","B"]`)) || !bytes.Contains(declBytes, []byte(`"doc":null`)) || bytes.Contains(declBytes, []byte("documents")) {
+	if !bytes.Contains(declBytes, []byte(`"names":["A","B"]`)) || !bytes.Contains(declBytes, []byte(`"docs":[]`)) || bytes.Contains(declBytes, []byte("documents")) {
 		t.Fatalf("declarations = %s", declBytes)
 	}
 	loaded, loadedSnap, err := index.Load(root)
-	if err != nil || loaded.DeclarationLen() != 10 || loaded.Declarations()[1].Doc != byText["F documents F."] {
+	if err != nil || loaded.DeclarationLen() != 10 || loaded.Declarations()[1].Docs[0] != byText["F documents F."] {
 		t.Fatalf("Load = %v %v", loaded, err)
 	}
 	if loadedSnap.DeclarationsDigest != snap.DeclarationsDigest || !index.Current(loadedSnap, policy, []index.Source{source}) {
@@ -1644,24 +1644,22 @@ func TestDeclarationInvariants(t *testing.T) {
 	comment := cmt("alpha", 0, 5)
 	good := goDoc("a.go", comment)
 	good.Declarations = []syntax.Declaration{{
-		Kind:   syntax.KindFunction,
-		Names:  []string{"F"},
-		Range:  span(10, 20),
-		HasDoc: true,
-		Doc:    comment.Range,
+		Kind:  syntax.KindFunction,
+		Names: []string{"F"},
+		Range: span(10, 20),
+		Docs:  []syntax.Range{comment.Range},
 	}}
 	idx := mustBuild(t, good)
-	if idx.DeclarationLen() != 1 || idx.Declarations()[0].Doc.String() != "C000001" || idx.Declarations()[0].ID.String() != "D000001" {
+	if idx.DeclarationLen() != 1 || idx.Declarations()[0].Docs[0].String() != "C000001" || idx.Declarations()[0].ID.String() != "D000001" {
 		t.Fatalf("mapped = %+v", idx.Declarations())
 	}
 
 	bad := goDoc("a.go", comment)
 	bad.Declarations = []syntax.Declaration{{
-		Kind:   syntax.KindFunction,
-		Names:  []string{"F"},
-		Range:  span(10, 20),
-		HasDoc: true,
-		Doc:    span(0, 4),
+		Kind:  syntax.KindFunction,
+		Names: []string{"F"},
+		Range: span(10, 20),
+		Docs:  []syntax.Range{span(0, 4)},
 	}}
 	err := requireFailure(t, []*syntax.Document{bad})
 	var unresolved *index.UnresolvedDocError
@@ -1702,7 +1700,7 @@ func TestDeclarationInvariants(t *testing.T) {
 	none := goDoc("a.go")
 	none.Declarations = []syntax.Declaration{{Kind: syntax.KindField, Names: nil, Range: span(1, 2)}}
 	stored := mustBuild(t, none).Declarations()[0]
-	if stored.Names == nil || len(stored.Names) != 0 || stored.Doc.Valid() {
+	if stored.Names == nil || len(stored.Names) != 0 || (stored.Docs == nil || len(stored.Docs) != 0) {
 		t.Fatalf("anonymous = %+v", stored)
 	}
 	policy := index.DigestBytes([]byte("policy"))
@@ -1711,7 +1709,7 @@ func TestDeclarationInvariants(t *testing.T) {
 		t.Fatalf("Persist anonymous: %v", err)
 	}
 	raw := readPersisted(t, root, index.DeclarationsPath)
-	if !bytes.Contains(raw, []byte(`"names":[]`)) || !bytes.Contains(raw, []byte(`"doc":null`)) {
+	if !bytes.Contains(raw, []byte(`"names":[]`)) || !bytes.Contains(raw, []byte(`"docs":[]`)) {
 		t.Fatalf("anonymous bytes = %s", raw)
 	}
 	loaded, _, err := index.Load(root)
@@ -1720,9 +1718,9 @@ func TestDeclarationInvariants(t *testing.T) {
 	}
 
 	left := goDoc("a.go", cmt("same", 0, 4))
-	left.Declarations = []syntax.Declaration{{Kind: syntax.KindFunction, Names: []string{"F"}, Range: span(8, 12), HasDoc: true, Doc: span(0, 4)}}
+	left.Declarations = []syntax.Declaration{{Kind: syntax.KindFunction, Names: []string{"F"}, Range: span(8, 12), Docs: []syntax.Range{span(0, 4)}}}
 	right := goDoc("a.go", cmt("same", 0, 4))
-	right.Declarations = []syntax.Declaration{{Kind: syntax.KindFunction, Names: []string{"G"}, Range: span(8, 12), HasDoc: true, Doc: span(0, 4)}}
+	right.Declarations = []syntax.Declaration{{Kind: syntax.KindFunction, Names: []string{"G"}, Range: span(8, 12), Docs: []syntax.Range{span(0, 4)}}}
 	dirA, dirB := t.TempDir(), t.TempDir()
 	source := []index.Source{{Path: "a.go", Language: syntax.Go, Digest: index.DigestBytes([]byte("a"))}}
 	if _, err := index.Persist(dirA, policy, source, mustBuild(t, left)); err != nil {
@@ -1784,15 +1782,15 @@ func TestDeclarationLoadRejectsBadRecords(t *testing.T) {
 
 func declLine(t *testing.T, id, path, kind string, names []string, doc string, start, end int) string {
 	t.Helper()
-	docJSON := "null"
+	docJSON := "[]"
 	if doc != "" {
-		docJSON = `"` + doc + `"`
+		docJSON = `["` + doc + `"]`
 	}
 	nameJSON, err := json.Marshal(names)
 	if err != nil {
 		t.Fatalf("names: %v", err)
 	}
-	return fmt.Sprintf("{\"id\":%q,\"path\":%q,\"language\":\"go\",\"kind\":%q,\"names\":%s,\"range\":{\"start\":{\"offset\":%d,\"line\":1,\"column\":1},\"end\":{\"offset\":%d,\"line\":1,\"column\":1}},\"doc\":%s}",
+	return fmt.Sprintf("{\"id\":%q,\"path\":%q,\"language\":\"go\",\"kind\":%q,\"names\":%s,\"range\":{\"start\":{\"offset\":%d,\"line\":1,\"column\":1},\"end\":{\"offset\":%d,\"line\":1,\"column\":1}},\"docs\":%s}",
 		id, path, kind, nameJSON, start, end, docJSON)
 }
 
@@ -1819,5 +1817,148 @@ func span(start, end int) syntax.Range {
 	return syntax.Range{
 		Start: syntax.Position{Offset: start, Line: 1, Column: 1},
 		End:   syntax.Position{Offset: end, Line: 1, Column: 1},
+	}
+}
+
+func TestPluralDocumentation(t *testing.T) {
+	comments := []syntax.Comment{cmt("z", 0, 4), cmt("same", 6, 10), cmt("same", 12, 16), cmt("a", 18, 22)}
+	for _, count := range []int{0, 1, 2, 4} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			ranges := make([]syntax.Range, count)
+			want := make([]index.ID, count)
+			wantText := make([]string, count)
+			for i := range ranges {
+				ranges[i] = comments[count-i-1].Range
+				wantText[i] = fmt.Sprintf("C%06d", i+1)
+				want[i] = mustParse(t, wantText[i])
+			}
+			doc := goDoc("a.go", comments[3], comments[1], comments[0], comments[2])
+			doc.Declarations = []syntax.Declaration{{Kind: syntax.KindFunction, Names: []string{"F"}, Range: span(24, 30), Docs: ranges}}
+			before := append([]syntax.Range{}, ranges...)
+			idx := mustBuild(t, doc)
+			decl := idx.Declarations()[0]
+			if decl.Docs == nil || !slices.Equal(decl.Docs, want) || !slices.Equal(ranges, before) {
+				t.Fatalf("docs = %v, want %v; input = %v", decl.Docs, want, ranges)
+			}
+			if idx.Len() != 4 || decl.ID.String() != "D000001" || decl.Range != span(24, 30) {
+				t.Fatalf("identity changed: %+v", decl)
+			}
+			for i, entry := range idx.Entries() {
+				if entry.Range != comments[i].Range || entry.Text != comments[i].Text {
+					t.Fatalf("physical comment %d changed: %+v", i, entry)
+				}
+			}
+			if count > 0 {
+				decl.Docs[0] = index.ID{}
+				lookup, ok := idx.LookupDeclaration(decl.ID)
+				if !ok || !slices.Equal(lookup.Docs, want) {
+					t.Fatal("Declarations shares documentation state")
+				}
+				lookup.Docs[0] = index.ID{}
+				doc.Declarations[0].Docs[0] = span(80, 90)
+				if !slices.Equal(idx.Declarations()[0].Docs, want) {
+					t.Fatal("LookupDeclaration or Build shares documentation state")
+				}
+			}
+			root := t.TempDir()
+			policy := index.DigestBytes([]byte("policy"))
+			sources := []index.Source{{Path: "a.go", Language: syntax.Go, Digest: index.DigestBytes([]byte("source"))}}
+			if _, err := index.Persist(root, policy, sources, idx); err != nil {
+				t.Fatal(err)
+			}
+			raw := readPersisted(t, root, index.DeclarationsPath)
+			encoded, err := json.Marshal(wantText)
+			if err != nil || !bytes.Contains(raw, append([]byte(`"docs":`), encoded...)) || bytes.Contains(raw, []byte(`"doc":`)) {
+				t.Fatalf("noncanonical docs: %s", raw)
+			}
+			loaded, snap, err := index.Load(root)
+			if err != nil || !index.Current(snap, policy, sources) || loaded.Declarations()[0].Docs == nil || !slices.Equal(loaded.Declarations()[0].Docs, want) {
+				t.Fatalf("load/current = %v, %v", loaded, err)
+			}
+		})
+	}
+}
+
+func TestInvalidPluralDocumentation(t *testing.T) {
+	a, b, c := cmt("a", 0, 4), cmt("b", 6, 10), cmt("c", 12, 16)
+	wrongCoordinates := a.Range
+	wrongCoordinates.End.Column++
+	cases := []struct {
+		name      string
+		docs      []syntax.Range
+		duplicate bool
+		malformed bool
+	}{
+		{name: "missing", docs: []syntax.Range{span(30, 34)}},
+		{name: "missing middle", docs: []syntax.Range{a.Range, b.Range, c.Range}},
+		{name: "overlap is not exact", docs: []syntax.Range{span(0, 3)}},
+		{name: "coordinates must match", docs: []syntax.Range{wrongCoordinates}},
+		{name: "duplicate", docs: []syntax.Range{a.Range, c.Range, a.Range}, duplicate: true},
+		{name: "malformed member", docs: []syntax.Range{a.Range, {}, c.Range}, malformed: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := goDoc("a.go", a, c)
+			doc.Declarations = []syntax.Declaration{{Kind: syntax.KindFunction, Range: span(40, 50), Docs: tc.docs}}
+			// The missing middle range exists in another file, which cannot resolve it.
+			err := requireFailure(t, []*syntax.Document{doc, goDoc("b.go", b)})
+			if tc.malformed {
+				var invalid *index.DeclarationError
+				if !errors.As(err, &invalid) || !errors.Is(err, index.ErrPosition) {
+					t.Fatalf("malformed = %v", err)
+				}
+			} else if tc.duplicate {
+				var invalid *index.DeclarationError
+				if !errors.As(err, &invalid) || !errors.Is(err, index.ErrDuplicateDoc) {
+					t.Fatalf("duplicate = %v", err)
+				}
+			} else {
+				var unresolved *index.UnresolvedDocError
+				if !errors.As(err, &unresolved) || unresolved.Path != "a.go" {
+					t.Fatalf("unresolved = %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestPluralDocumentationLoadValidation(t *testing.T) {
+	policy := index.DigestBytes([]byte("policy"))
+	sources := []testSource{{Path: "a.go", Language: "go", Digest: index.DigestBytes([]byte("source"))}}
+	comments := lines(entryLine(t, "C000001", "a.go", "a", 0, 4), entryLine(t, "C000002", "a.go", "b", 6, 10), entryLine(t, "C000003", "a.go", "c", 12, 16))
+	base := declLine(t, "D000001", "a.go", "function", []string{"F"}, "", 20, 30)
+	for _, shape := range []string{
+		"missing",
+		`"doc":null`, `"doc":"C000001"`, `"docs":null`, `"docs":"C000001"`,
+		`"docs":[null]`, `"docs":[""]`, `"docs":["D000001"]`,
+		`"docs":["C000001","C000099","C000003"]`,
+		`"docs":["C000001","C000002","C000001"]`,
+		`"docs":["C000002","C000001"]`,
+		`"docs":[],"doc":null`,
+	} {
+		t.Run(shape, func(t *testing.T) {
+			root := t.TempDir()
+			body := lines(strings.Replace(base, `"docs":[]`, shape, 1))
+			if shape == "missing" {
+				body = lines(strings.Replace(base, `,"docs":[]`, "", 1))
+			}
+			writeDeclared(t, root, policy, 3, sources, comments, body)
+			idx, _, err := index.Load(root)
+			if idx != nil || !errors.Is(err, index.ErrCorrupt) {
+				t.Fatalf("invalid shape accepted: %v, %v", idx, err)
+			}
+			if strings.HasPrefix(shape, `"doc":`) {
+				var unknown *index.UnknownFieldError
+				if !errors.As(err, &unknown) || unknown.Name != "doc" {
+					t.Fatalf("legacy field accepted: %v", err)
+				}
+			}
+			if shape == `"docs":["C000001","C000002","C000001"]` && !errors.Is(err, index.ErrDuplicateDoc) {
+				t.Fatalf("duplicate = %v", err)
+			}
+			if shape == `"docs":["C000002","C000001"]` && !errors.Is(err, index.ErrDocsOutOfOrder) {
+				t.Fatalf("order = %v", err)
+			}
+		})
 	}
 }

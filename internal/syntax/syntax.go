@@ -21,10 +21,9 @@
 // is useful, and it does not assign comment IDs.
 //
 // A declaration fact carries its kind, the names that node declares, its
-// half-open physical range, and the physical range of its directly
-// associated documentation comment when the parser recorded one. A missing
-// documentation comment is a fact about that node. Syntax does not decide
-// that the declaration requires documentation, and it does not assign
+// half-open physical range, and ordered physical ranges of its direct
+// documentation relationships. An empty collection is a fact about that node.
+// Syntax does not decide that the declaration requires documentation or assign
 // declaration IDs.
 //
 // Context returns a bounded structural snippet around one comment range.
@@ -141,7 +140,7 @@ const (
 	KindPackage Kind = "package"
 	// KindFunction is a function declaration.
 	KindFunction Kind = "function"
-	// KindMethod is a function declaration with a receiver.
+	// KindMethod is a method declaration or a method signature.
 	KindMethod Kind = "method"
 	// KindConstGroup is a parenthesized const declaration.
 	KindConstGroup Kind = "const-group"
@@ -157,24 +156,44 @@ const (
 	KindType Kind = "type"
 	// KindField is a struct field or an interface field.
 	KindField Kind = "field"
+	// KindClass is a class declaration.
+	KindClass Kind = "class"
+	// KindConstructor is a class constructor declaration.
+	KindConstructor Kind = "constructor"
+	// KindProperty is a field, property, or property signature.
+	KindProperty Kind = "property"
+	// KindAccessor is a getter or setter declaration.
+	KindAccessor Kind = "accessor"
+	// KindLet is a lexical let declaration statement.
+	KindLet Kind = "let"
+	// KindInterface is an interface declaration.
+	KindInterface Kind = "interface"
+	// KindTypeAlias is a type alias declaration.
+	KindTypeAlias Kind = "type-alias"
+	// KindEnum is an enum declaration.
+	KindEnum Kind = "enum"
+	// KindEnumMember is an individual enum member.
+	KindEnumMember Kind = "enum-member"
+	// KindNamespace is a namespace or module declaration with a body.
+	KindNamespace Kind = "namespace"
 )
 
 // Declaration is one structural declaration fact from a parse.
 //
-// Kind is the form of the node. Names are the identifiers that node
-// declares, in source order. Names is empty when the node declares no
-// identifier, including an embedded field. Range is the half-open physical
-// extent of the declaration. HasDoc is true when the parser associated a
-// documentation comment directly with this node. Doc is that comment's
-// physical range, and it is meaningful only when HasDoc is true. A false
-// HasDoc means the node's documentation field was empty. It does not mean
-// that documentation is required, and it is not inferred from another node.
+// Kind is the form of the node. Names are structural source spellings in
+// source order. The language defines which name slots are literal or binding
+// names. Anonymous and nonliteral computed names can have an empty collection.
+// Range is the half-open physical extent of the declaration. Docs contains
+// zero or more direct parser-owned
+// documentation ranges in physical source order, without duplicates. It is
+// non-nil, including when empty. Each range identifies a separate comment unit
+// from the same parse. Relationships are not inferred from proximity or another
+// node. An empty collection does not mean that documentation is required.
 type Declaration struct {
-	Kind   Kind
-	Names  []string
-	Range  Range
-	HasDoc bool
-	Doc    Range
+	Kind  Kind
+	Names []string
+	Range Range
+	Docs  []Range
 }
 
 // Document is one parsed source file.
@@ -205,7 +224,8 @@ func (e *UnsupportedError) Error() string {
 	return fmt.Sprintf("unsupported source language: %s", e.Path)
 }
 
-// ParseError means source is not valid in the language of Path.
+// ParseError means the language implementation could not produce a document.
+// Go reports syntax errors; ECMAScript-family recovery is not validity checking.
 //
 // Path is the logical path supplied by the caller. Detail uses that path
 // and physical line and column numbers. A ParseError has no document.
@@ -243,9 +263,10 @@ func Recognize(logicalPath string) (Language, bool) {
 // source is the complete file contents. Nil source is empty input. Parse
 // does not open logicalPath. An unsupported path returns *UnsupportedError
 // and a nil document, including when the bytes happen to be valid in some
-// supported language. A syntax error returns *ParseError and a nil document.
-// A successful document contains every comment unit in physical order and
-// the declaration facts from that same parse.
+// supported language. A parse failure returns *ParseError and a nil document.
+// Go rejects malformed source. ECMAScript adapters preserve observed comments
+// and suppress declarations on detected unsafe recovery, without validating
+// syntax, types or semantics. Successful facts come from the same parse.
 func Parse(logicalPath string, source []byte) (*Document, error) {
 	return languages.parse(logicalPath, source)
 }
@@ -270,9 +291,12 @@ func (r registry) parse(logicalPath string, source []byte) (*Document, error) {
 	for i, d := range got.Declarations {
 		names := make([]string, len(d.Names))
 		copy(names, d.Names)
+		docs := make([]Range, len(d.Docs))
+		for j, doc := range d.Docs {
+			docs[j] = facadeRange(doc.Start, doc.End)
+		}
 		declared[i] = Declaration{Kind: Kind(d.Kind), Names: names,
-			Range: facadeRange(d.Start, d.End), HasDoc: d.HasDoc,
-			Doc: facadeRange(d.DocStart, d.DocEnd)}
+			Range: facadeRange(d.Start, d.End), Docs: docs}
 	}
 	return &Document{Path: logicalPath, Language: Language(implementation.ID()), Comments: out, Declarations: declared}, nil
 }
@@ -285,7 +309,7 @@ func (r registry) parse(logicalPath string, source []byte) (*Document, error) {
 // walk a directory. commentRange must be the physical range of exactly one
 // comment unit in a successful parse of source. The unit is identified by
 // that range. Its text is not a key. An unsupported path returns
-// *UnsupportedError. A syntax error returns *ParseError and no snippet.
+// *UnsupportedError. A parse failure returns *ParseError and no snippet.
 // A range that is not exactly one comment unit returns an error wrapping
 // ErrMalformedRange, ErrCommentNotFound, or ErrAmbiguousComment.
 //
@@ -310,7 +334,7 @@ func Context(logicalPath string, source []byte, commentRange Range) (Snippet, er
 // and does not walk a directory. declRange must be the physical range of
 // exactly one declaration in a successful parse of source. The declaration
 // is identified by that range. Its names and its documentation text are not
-// keys. An unsupported path returns *UnsupportedError. A syntax error
+// keys. An unsupported path returns *UnsupportedError. A parse failure
 // returns *ParseError and no snippet. A range that is not exactly one
 // declaration returns an error wrapping ErrMalformedDeclaration,
 // ErrDeclarationNotFound, or ErrAmbiguousDeclaration.

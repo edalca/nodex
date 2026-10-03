@@ -2,6 +2,7 @@ package syntax
 
 import (
 	"errors"
+	"fmt"
 	"go/parser"
 	"go/token"
 	"os"
@@ -1414,6 +1415,106 @@ func TestGoDeclarations(t *testing.T) {
 	}
 }
 
+func TestGoDirectDocsCardinality(t *testing.T) {
+	cases := []struct {
+		kind                       Kind
+		before, declaration, after string
+	}{
+		{KindPackage, "", "package p\n", ""},
+		{KindFunction, "package p\n", "func F() {}\n", ""},
+		{KindMethod, "package p\ntype T struct{}\n", "func (T) M() {}\n", ""},
+		{KindConstGroup, "package p\n", "const (\nA = 1\n)\n", ""},
+		{KindVarGroup, "package p\n", "var (\nA int\n)\n", ""},
+		{KindTypeGroup, "package p\n", "type (\nT int\n)\n", ""},
+		{KindConst, "package p\n", "const A = 1\n", ""},
+		{KindVar, "package p\n", "var A int\n", ""},
+		{KindType, "package p\n", "type T int\n", ""},
+		{KindConst, "package p\nconst (\n", "A = 1\n", ")\n"},
+		{KindVar, "package p\nvar (\n", "A int\n", ")\n"},
+		{KindType, "package p\ntype (\n", "T int\n", ")\n"},
+		{KindField, "package p\ntype T struct {\n", "F int // trailing\n", "}\n"},
+		{KindField, "package p\ntype T interface {\n", "M() // trailing\n", "}\n"},
+	}
+	for i, tc := range cases {
+		for _, documented := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/%d/%v", tc.kind, i, documented), func(t *testing.T) {
+				comment := ""
+				if documented {
+					comment = "// direct\n"
+				}
+				doc := mustParseDoc(t, "a.go", tc.before+comment+tc.declaration+tc.after)
+				start := len(tc.before) + len(comment)
+				var target *Declaration
+				for j := range doc.Declarations {
+					decl := &doc.Declarations[j]
+					if decl.Kind == tc.kind && decl.Range.Start.Offset == start {
+						target = decl
+					}
+					if decl.Docs == nil || len(decl.Docs) > 1 {
+						t.Fatalf("Go docs must be a non-nil 0..1 collection: %+v", decl)
+					}
+				}
+				if target == nil {
+					t.Fatal("declaration missing")
+				}
+				if !documented {
+					if len(target.Docs) != 0 {
+						t.Fatalf("undocumented: %+v", target)
+					}
+					return
+				}
+				if len(target.Docs) != 1 || target.Docs[0].Start.Offset != len(tc.before) || target.Docs[0].End.Offset != len(tc.before)+len("// direct") {
+					t.Fatalf("direct docs: %+v", target)
+				}
+				for _, other := range doc.Declarations {
+					if other.Range != target.Range && len(other.Docs) != 0 {
+						t.Fatalf("documentation propagated: %+v", other)
+					}
+				}
+			})
+		}
+	}
+	separated := mustParseDoc(t, "a.go", "package p\n// nearby\n\nfunc F() {}\n")
+	if len(docByKind(t, separated, KindFunction, "F").Docs) != 0 {
+		t.Fatal("proximity created a direct documentation relationship")
+	}
+}
+
+func TestFacadePluralDocs(t *testing.T) {
+	for _, count := range []int{0, 1, 2, 4} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			ranges := make([]types.Range, count)
+			comments := make([]types.Comment, count)
+			want := make([]Range, count)
+			for i := range ranges {
+				start := types.Position{Offset: i * 6, Line: 1, Column: i*6 + 1}
+				end := types.Position{Offset: i*6 + 4, Line: 1, Column: i*6 + 5}
+				ranges[i] = types.Range{Start: start, End: end}
+				comments[i] = types.Comment{Raw: "same", Text: "same", Start: start, End: end}
+				want[i] = facadeRange(start, end)
+			}
+			f := &fixtureLanguage{id: "fixture", suffix: ".fixture", parsed: &contracts.Document{
+				Comments:     comments,
+				Declarations: []types.Declaration{{Kind: "custom-form", Docs: ranges}},
+			}}
+			r, err := newRegistry([]contracts.Language{f})
+			if err != nil {
+				t.Fatal(err)
+			}
+			doc, err := r.parse("a.fixture", nil)
+			if err != nil || len(doc.Comments) != count || !reflect.DeepEqual(doc.Declarations[0].Docs, want) {
+				t.Fatalf("facade docs = %+v, %v", doc, err)
+			}
+			if count > 0 {
+				doc.Declarations[0].Docs[0] = Range{}
+				if ranges[0].End.Offset != 4 {
+					t.Fatal("facade docs alias private parser output")
+				}
+			}
+		})
+	}
+}
+
 func mustParseDoc(t *testing.T, path, src string) *Document {
 	t.Helper()
 	doc, err := Parse(path, []byte(src))
@@ -1441,19 +1542,22 @@ func assertDecls(t *testing.T, doc *Document, want []struct {
 		if decl.Kind != w.kind || !reflect.DeepEqual(decl.Names, names) {
 			t.Fatalf("decl %d = %s %q, want %s %q\n%s", i, decl.Kind, decl.Names, w.kind, names, describeDecls(doc))
 		}
+		if decl.Docs == nil {
+			t.Fatalf("decl %d docs is nil", i)
+		}
 		if w.doc == "" {
-			if decl.HasDoc {
+			if len(decl.Docs) != 0 {
 				t.Fatalf("decl %d %s has unexpected documentation\n%s", i, decl.Kind, describeDecls(doc))
 			}
 			continue
 		}
-		if !decl.HasDoc {
+		if len(decl.Docs) != 1 {
 			t.Fatalf("decl %d %s has no documentation, want %q", i, decl.Kind, w.doc)
 		}
 		var matched *Comment
 		for j := range doc.Comments {
 			comment := &doc.Comments[j]
-			if comment.Range == decl.Doc && comment.Text == w.doc {
+			if comment.Range == decl.Docs[0] && comment.Text == w.doc {
 				matched = comment
 				break
 			}
@@ -1482,7 +1586,7 @@ func describeDecls(doc *Document) string {
 		b.WriteString(string(fmtDecl))
 		b.WriteString(" ")
 		b.WriteString(strings.Join(decl.Names, ","))
-		if decl.HasDoc {
+		if len(decl.Docs) != 0 {
 			b.WriteString(" doc")
 		}
 		if i+1 < len(doc.Declarations) {
@@ -1563,8 +1667,8 @@ func TestRegistryDispatchesCompleteLanguage(t *testing.T) {
 		parsed: &contracts.Document{
 			Comments: []types.Comment{{Raw: "abc", Text: "normalized", Start: start, End: end}},
 			Declarations: []types.Declaration{
-				{Kind: "custom-form", Names: []string{"A", "B"}, Start: start, End: end, HasDoc: true, DocStart: start, DocEnd: end},
-				{Kind: "unnamed", Start: start, End: end},
+				{Kind: "custom-form", Names: []string{"A", "B"}, Start: start, End: end, Docs: []types.Range{{Start: start, End: end}}},
+				{Kind: "unnamed", Start: start, End: end, Docs: []types.Range{}},
 			},
 		},
 	}
@@ -1585,8 +1689,8 @@ func TestRegistryDispatchesCompleteLanguage(t *testing.T) {
 		Path: "x.fixture", Language: "fixture",
 		Comments: []Comment{{Raw: "abc", Text: "normalized", Range: rng}},
 		Declarations: []Declaration{
-			{Kind: "custom-form", Names: []string{"A", "B"}, Range: rng, HasDoc: true, Doc: rng},
-			{Kind: "unnamed", Names: []string{}, Range: rng},
+			{Kind: "custom-form", Names: []string{"A", "B"}, Range: rng, Docs: []Range{rng}},
+			{Kind: "unnamed", Names: []string{}, Range: rng, Docs: []Range{}},
 		},
 	}
 	if !reflect.DeepEqual(doc, want) {

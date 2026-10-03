@@ -28,6 +28,7 @@ const (
 	ruleCanonicalTests    = "canonical test file: "
 	ruleSyntaxDirection   = "syntax dependency direction: "
 	ruleSyntaxComposition = "syntax language composition: "
+	ruleParserBoundary    = "syntax parser dependency: "
 )
 
 // forbiddenPackageNames are escape-hatch package names. Matching is exact on a
@@ -72,6 +73,11 @@ func syntaxDependencyViolations(modulePath string, pkgs []pkg) []string {
 	var out []string
 	root := modulePath + "/internal/syntax"
 	for _, p := range pkgs {
+		for _, imp := range p.imports {
+			if (imp == "github.com/odvcencio/gotreesitter" || strings.HasPrefix(imp, "github.com/odvcencio/gotreesitter/")) && p.relDir != "internal/syntax/ecmascript" {
+				out = append(out, ruleParserBoundary+p.path+" imports "+imp)
+			}
+		}
 		if strings.HasPrefix(p.relDir, "internal/syntax/") {
 			for _, imp := range p.imports {
 				if imp == root {
@@ -669,7 +675,7 @@ func TestCanonicalTestFileScanner(t *testing.T) {
 
 func TestSyntaxPrivateBoundaries(t *testing.T) {
 	const module = "github.com/edalca/nodex"
-	for _, private := range []string{"contracts", "types", "golang"} {
+	for _, private := range []string{"contracts", "types", "golang", "ecmascript"} {
 		for _, consumer := range []string{"internal/index", "internal/project", "cmd/nodex"} {
 			t.Run(consumer+" imports "+private, func(t *testing.T) {
 				p := pkg{path: module + "/" + consumer, relDir: consumer,
@@ -692,7 +698,7 @@ func TestSyntaxPrivateBoundaries(t *testing.T) {
 
 func TestLanguageImportsRequireCompositionFile(t *testing.T) {
 	const module = "github.com/edalca/nodex"
-	for _, implementation := range []string{"golang", "fixture"} {
+	for _, implementation := range []string{"golang", "ecmascript", "fixture"} {
 		imp := module + "/internal/syntax/" + implementation
 		for _, file := range []string{"syntax.go", "presets.go", "other.go"} {
 			t.Run(implementation+" in "+file, func(t *testing.T) {
@@ -735,5 +741,18 @@ func TestCompositionScanner(t *testing.T) {
 				requireOnlyRule(t, check(module, pkgs), ruleSyntaxComposition)
 			}
 		})
+	}
+}
+
+func TestParserTypesStayInLanguageAdapter(t *testing.T) {
+	const module = "github.com/edalca/nodex"
+	for _, imp := range []string{"github.com/odvcencio/gotreesitter", "github.com/odvcencio/gotreesitter/grammars/runtime"} {
+		for _, consumer := range []string{"internal/index", "internal/project", "internal/syntax", "internal/syntax/types", "internal/syntax/contracts", "cmd/nodex"} {
+			t.Run(consumer+" imports "+imp, func(t *testing.T) {
+				p := pkg{path: module + "/" + consumer, relDir: consumer, imports: []string{imp}}
+				requireOnlyRule(t, check(module, []pkg{p}), ruleParserBoundary)
+			})
+		}
+		requireClean(t, check(module, []pkg{{path: module + "/internal/syntax/ecmascript", relDir: "internal/syntax/ecmascript", imports: []string{imp}}}))
 	}
 }

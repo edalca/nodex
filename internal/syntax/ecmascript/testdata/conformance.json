@@ -1,0 +1,2543 @@
+[
+  {
+    "name": "function",
+    "source": "/** A */\nfunction f() {}\n",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "generator",
+    "source": "/** A */\nfunction* f() {}\n",
+    "declarations": [
+      {
+        "raw": "function* f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "async",
+    "source": "/** A */\nexport async function f() {}\n",
+    "declarations": [
+      {
+        "raw": "export async function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "class",
+    "source": "/** A */\nclass C {}\n",
+    "declarations": [
+      {
+        "raw": "class C {}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "const",
+    "source": "/** A */\nconst x = () => {};\n",
+    "declarations": [
+      {
+        "raw": "const x = () => {};",
+        "kind": "const",
+        "names": [
+          "x"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "let",
+    "source": "/** A */\nlet first, second;\n",
+    "declarations": [
+      {
+        "raw": "let first, second;",
+        "kind": "let",
+        "names": [
+          "first",
+          "second"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "var",
+    "source": "/** A */\nvar x = 1;\n",
+    "declarations": [
+      {
+        "raw": "var x = 1;",
+        "kind": "var",
+        "names": [
+          "x"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "anonymous-function",
+    "source": "/** A */\nexport default function() {}\n",
+    "declarations": [
+      {
+        "raw": "export default function() {}",
+        "kind": "function",
+        "names": [],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "anonymous-class",
+    "source": "/** A */\nexport default class {}\n",
+    "declarations": [
+      {
+        "raw": "export default class {}",
+        "kind": "class",
+        "names": [],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "default-function",
+    "source": "/** A */\nexport default function f() {}\n",
+    "declarations": [
+      {
+        "raw": "export default function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "default-class",
+    "source": "/** A */\nexport default class C {}\n",
+    "declarations": [
+      {
+        "raw": "export default class C {}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "escaped",
+    "source": "/** A */\nfunction \\u0066() {}\n",
+    "declarations": [
+      {
+        "raw": "function \\u0066() {}",
+        "kind": "function",
+        "names": [
+          "\\u0066"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "destructuring",
+    "source": "/** A */\nconst {a: renamed, shorthand, nested: {b: deep}, ...rest} = obj, [first, second, ...tail] = arr;\n",
+    "declarations": [
+      {
+        "raw": "const {a: renamed, shorthand, nested: {b: deep}, ...rest} = obj, [first, second, ...tail] = arr;",
+        "kind": "const",
+        "names": [
+          "renamed",
+          "shorthand",
+          "deep",
+          "rest",
+          "first",
+          "second",
+          "tail"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "binding-default",
+    "source": "/** A */\nconst {key: alias = other} = obj, [item = fallback] = arr;\n",
+    "declarations": [
+      {
+        "raw": "const {key: alias = other} = obj, [item = fallback] = arr;",
+        "kind": "const",
+        "names": [
+          "alias",
+          "item"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "method",
+    "source": "class C {\n/** A */\nm() {}\n}",
+    "declarations": [
+      {
+        "raw": "class C {\n/** A */\nm() {}\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "m() {}",
+        "kind": "method",
+        "names": [
+          "m"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "constructor",
+    "source": "class C {\n/** A */\nconstructor() {}\n}",
+    "declarations": [
+      {
+        "raw": "class C {\n/** A */\nconstructor() {}\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "constructor() {}",
+        "kind": "constructor",
+        "names": [],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "field",
+    "source": "class C {\n/** A */\nx = 1;\n}",
+    "declarations": [
+      {
+        "raw": "class C {\n/** A */\nx = 1;\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "x = 1;",
+        "kind": "property",
+        "names": [
+          "x"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "getter",
+    "source": "class C {\n/** A */\nget x() { return 1; }\n}",
+    "declarations": [
+      {
+        "raw": "class C {\n/** A */\nget x() { return 1; }\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "get x() { return 1; }",
+        "kind": "accessor",
+        "names": [
+          "x"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "setter",
+    "source": "class C {\n/** A */\nset x(v) {}\n}",
+    "declarations": [
+      {
+        "raw": "class C {\n/** A */\nset x(v) {}\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "set x(v) {}",
+        "kind": "accessor",
+        "names": [
+          "x"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "static",
+    "source": "class C {\n/** A */\nstatic m() {}\n}",
+    "declarations": [
+      {
+        "raw": "class C {\n/** A */\nstatic m() {}\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "static m() {}",
+        "kind": "method",
+        "names": [
+          "m"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "quoted",
+    "source": "class C {\n/** A */\n\"quoted-name\"() {}\n}",
+    "declarations": [
+      {
+        "raw": "class C {\n/** A */\n\"quoted-name\"() {}\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "\"quoted-name\"() {}",
+        "kind": "method",
+        "names": [
+          "\"quoted-name\""
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "numeric",
+    "source": "class C {\n/** A */\n42() {}\n}",
+    "declarations": [
+      {
+        "raw": "class C {\n/** A */\n42() {}\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "42() {}",
+        "kind": "method",
+        "names": [
+          "42"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "computed",
+    "source": "class C {\n/** A */\n[key]() {}\n}",
+    "declarations": [
+      {
+        "raw": "class C {\n/** A */\n[key]() {}\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "[key]() {}",
+        "kind": "method",
+        "names": [],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "computed-literal",
+    "source": "class C {\n/** A */\n[\"literal\"]() {}\n}",
+    "declarations": [
+      {
+        "raw": "class C {\n/** A */\n[\"literal\"]() {}\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "[\"literal\"]() {}",
+        "kind": "method",
+        "names": [],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "private",
+    "source": "class C {\n/** A */\n#hidden = 1;\n}",
+    "declarations": [
+      {
+        "raw": "class C {\n/** A */\n#hidden = 1;\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "#hidden = 1;",
+        "kind": "property",
+        "names": [
+          "#hidden"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "interface",
+    "source": "/** A */\ninterface I {}\n",
+    "declarations": [
+      {
+        "raw": "interface I {}",
+        "kind": "interface",
+        "names": [
+          "I"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "alias",
+    "source": "/** A */\ntype X<T> = T[];\n",
+    "declarations": [
+      {
+        "raw": "type X<T> = T[];",
+        "kind": "type-alias",
+        "names": [
+          "X"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "namespace",
+    "source": "/** A */\nnamespace N {}\n",
+    "declarations": [
+      {
+        "raw": "namespace N {}",
+        "kind": "namespace",
+        "names": [
+          "N"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "module",
+    "source": "/** A */\ndeclare module \"m\" {}\n",
+    "declarations": [
+      {
+        "raw": "declare module \"m\" {}",
+        "kind": "namespace",
+        "names": [
+          "\"m\""
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "ambient-function",
+    "source": "/** A */\ndeclare function f(): void;\n",
+    "declarations": [
+      {
+        "raw": "declare function f(): void;",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "ambient-class",
+    "source": "/** A */\ndeclare class C {}\n",
+    "declarations": [
+      {
+        "raw": "declare class C {}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "ambient-interface",
+    "source": "/** A */\ndeclare interface I {}\n",
+    "declarations": [
+      {
+        "raw": "declare interface I {}",
+        "kind": "interface",
+        "names": [
+          "I"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "export-ambient",
+    "source": "/** A */\nexport declare function f(): void;\n",
+    "declarations": [
+      {
+        "raw": "export declare function f(): void;",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "interface-method",
+    "source": "interface I {\n/** A */\nm(): void;\n}",
+    "declarations": [
+      {
+        "raw": "interface I {\n/** A */\nm(): void;\n}",
+        "kind": "interface",
+        "names": [
+          "I"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "m(): void;",
+        "kind": "method",
+        "names": [
+          "m"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "interface-property",
+    "source": "interface I {\n/** A */\nx: string;\n}",
+    "declarations": [
+      {
+        "raw": "interface I {\n/** A */\nx: string;\n}",
+        "kind": "interface",
+        "names": [
+          "I"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "x: string;",
+        "kind": "property",
+        "names": [
+          "x"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "signature-comma",
+    "source": "interface I {\n/** A */\nx: string,\n}",
+    "declarations": [
+      {
+        "raw": "interface I {\n/** A */\nx: string,\n}",
+        "kind": "interface",
+        "names": [
+          "I"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "x: string,",
+        "kind": "property",
+        "names": [
+          "x"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "abstract-method",
+    "source": "abstract class C {\n/** A */\nabstract m(): void;\n}",
+    "declarations": [
+      {
+        "raw": "abstract class C {\n/** A */\nabstract m(): void;\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "abstract m(): void;",
+        "kind": "method",
+        "names": [
+          "m"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "modifiers",
+    "source": "abstract class C {\n/** A */\nprotected static readonly x: number = 1;\n}",
+    "declarations": [
+      {
+        "raw": "abstract class C {\n/** A */\nprotected static readonly x: number = 1;\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "protected static readonly x: number = 1;",
+        "kind": "property",
+        "names": [
+          "x"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "enum",
+    "source": "/** E */\nenum E {\n/** A */\nA,\n/** B */\nB = 2,\n}",
+    "declarations": [
+      {
+        "raw": "enum E {\n/** A */\nA,\n/** B */\nB = 2,\n}",
+        "kind": "enum",
+        "names": [
+          "E"
+        ],
+        "docs": [
+          "/** E */"
+        ]
+      },
+      {
+        "raw": "A",
+        "kind": "enum-member",
+        "names": [
+          "A"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      },
+      {
+        "raw": "B = 2",
+        "kind": "enum-member",
+        "names": [
+          "B"
+        ],
+        "docs": [
+          "/** B */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** E */",
+      "/** A */",
+      "/** B */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "object-property",
+    "source": "const o = {\n/** A */\nx: 1\n};",
+    "declarations": [
+      {
+        "raw": "const o = {\n/** A */\nx: 1\n};",
+        "kind": "const",
+        "names": [
+          "o"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "x: 1",
+        "kind": "property",
+        "names": [
+          "x"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "object-method",
+    "source": "const o = {\n/** A */\nm() {}\n};",
+    "declarations": [
+      {
+        "raw": "const o = {\n/** A */\nm() {}\n};",
+        "kind": "const",
+        "names": [
+          "o"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "m() {}",
+        "kind": "method",
+        "names": [
+          "m"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "typed-object-property",
+    "source": "type T = {\n/** A */\nx: string;\n};",
+    "declarations": [
+      {
+        "raw": "type T = {\n/** A */\nx: string;\n};",
+        "kind": "type-alias",
+        "names": [
+          "T"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "x: string;",
+        "kind": "property",
+        "names": [
+          "x"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "typed-object-method",
+    "source": "type T = {\n/** A */\nm(): void;\n};",
+    "declarations": [
+      {
+        "raw": "type T = {\n/** A */\nm(): void;\n};",
+        "kind": "type-alias",
+        "names": [
+          "T"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "m(): void;",
+        "kind": "method",
+        "names": [
+          "m"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "decorator-class-before",
+    "source": "/** A */\n@dec\nclass C {}",
+    "declarations": [
+      {
+        "raw": "@dec\nclass C {}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "decorator-class-after",
+    "source": "@dec\n/** A */\nclass C {}",
+    "declarations": [
+      {
+        "raw": "@dec\n/** A */\nclass C {}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "decorator-method-before",
+    "source": "class C {\n/** A */\n@dec\nm() {}\n}",
+    "declarations": [
+      {
+        "raw": "class C {\n/** A */\n@dec\nm() {}\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "@dec\nm() {}",
+        "kind": "method",
+        "names": [
+          "m"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "decorator-method-after",
+    "source": "class C {\n@dec\n/** A */\nm() {}\n}",
+    "declarations": [
+      {
+        "raw": "class C {\n@dec\n/** A */\nm() {}\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "@dec\n/** A */\nm() {}",
+        "kind": "method",
+        "names": [
+          "m"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "decorator-field-before",
+    "source": "class C {\n/** A */\n@dec\nx = 1;\n}",
+    "declarations": [
+      {
+        "raw": "class C {\n/** A */\n@dec\nx = 1;\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "@dec\nx = 1;",
+        "kind": "property",
+        "names": [
+          "x"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "decorator-field-after",
+    "source": "class C {\n@dec\n/** A */\nx = 1;\n}",
+    "declarations": [
+      {
+        "raw": "class C {\n@dec\n/** A */\nx = 1;\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "@dec\n/** A */\nx = 1;",
+        "kind": "property",
+        "names": [
+          "x"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "multiple-adjacent",
+    "source": "/** A */\n/** B */\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** A */",
+          "/** B */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */",
+      "/** B */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "multiple-blank",
+    "source": "/** A */\n\n\n/** B */\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** A */",
+          "/** B */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */",
+      "/** B */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "multiple-line",
+    "source": "/** A */\n// ordinary\n/** B */\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** A */",
+          "/** B */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */",
+      "// ordinary",
+      "/** B */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "multiple-block",
+    "source": "/** A */\n/* ordinary */\n/** B */\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** A */",
+          "/** B */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */",
+      "/* ordinary */",
+      "/** B */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "multiple-directive",
+    "source": "/** A */\n// @ts-check\n/** B */\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** A */",
+          "/** B */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */",
+      "// @ts-check",
+      "/** B */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "boundary-first",
+    "source": "/** A */ function f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "boundary-after",
+    "source": "work(); /** A */\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "boundary-multiline-trailing",
+    "source": "work(); /** A\n B */\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/** A\n B */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "boundary-trailing-then-leading",
+    "source": "work(); /** A */\n/** B */\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** B */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */",
+      "/** B */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "boundary-semicolon",
+    "source": "/** A */\n;\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "boundary-expression",
+    "source": "/** A */\nwork();\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "boundary-export-clause",
+    "source": "/** A */\nexport {};\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "boundary-empty",
+    "source": "/**/\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/**/"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "boundary-stars",
+    "source": "/***/\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/***/"
+        ]
+      }
+    ],
+    "comments": [
+      "/***/"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "boundary-many-stars",
+    "source": "/****/\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/****/"
+        ]
+      }
+    ],
+    "comments": [
+      "/****/"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "boundary-ordinary",
+    "source": "/* A */\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/* A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "boundary-bang",
+    "source": "/*! A */\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/*! A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "boundary-line-trap",
+    "source": "// /** A */\nfunction f() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "// /** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "export-gap-0",
+    "source": "export /** A */ function f() {}",
+    "declarations": [
+      {
+        "raw": "export /** A */ function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "export-gap-1",
+    "source": "/** A */\nexport /* gap */ function f() {}",
+    "declarations": [
+      {
+        "raw": "export /* gap */ function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */",
+      "/* gap */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "member-boundary-False",
+    "source": "class C {/** A */ m() {}\n}",
+    "declarations": [
+      {
+        "raw": "class C {/** A */ m() {}\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "m() {}",
+        "kind": "method",
+        "names": [
+          "m"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "member-boundary-True",
+    "source": "class C {\n/** A */ m() {}\n}",
+    "declarations": [
+      {
+        "raw": "class C {\n/** A */ m() {}\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "m() {}",
+        "kind": "method",
+        "names": [
+          "m"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "overloads",
+    "source": "/** A */\nfunction f(x: string): void;\n/** B */\nfunction f(x: number): void;\nfunction f(x: unknown): void {}",
+    "declarations": [
+      {
+        "raw": "function f(x: string): void;",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      },
+      {
+        "raw": "function f(x: number): void;",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** B */"
+        ]
+      },
+      {
+        "raw": "function f(x: unknown): void {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/** A */",
+      "/** B */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "nested",
+    "source": "/** outer */\nfunction outer() {\n/** inner */\nfunction inner() {}\n/** body */\nwork();\n}",
+    "declarations": [
+      {
+        "raw": "function outer() {\n/** inner */\nfunction inner() {}\n/** body */\nwork();\n}",
+        "kind": "function",
+        "names": [
+          "outer"
+        ],
+        "docs": [
+          "/** outer */"
+        ]
+      },
+      {
+        "raw": "function inner() {}",
+        "kind": "function",
+        "names": [
+          "inner"
+        ],
+        "docs": [
+          "/** inner */"
+        ]
+      }
+    ],
+    "comments": [
+      "/** outer */",
+      "/** inner */",
+      "/** body */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "trailing-function",
+    "source": "function f() {} /** trailing */\nfunction g() {}",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "function g() {}",
+        "kind": "function",
+        "names": [
+          "g"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/** trailing */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "trailing-members",
+    "source": "class C {\nm() {} /** trailing */\nx = 1; /** field */\n}",
+    "declarations": [
+      {
+        "raw": "class C {\nm() {} /** trailing */\nx = 1; /** field */\n}",
+        "kind": "class",
+        "names": [
+          "C"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "m() {}",
+        "kind": "method",
+        "names": [
+          "m"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "x = 1;",
+        "kind": "property",
+        "names": [
+          "x"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/** trailing */",
+      "/** field */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "trailing-signature",
+    "source": "interface I {\nx: string; /** trailing */\nm(): void; /** method */\n}",
+    "declarations": [
+      {
+        "raw": "interface I {\nx: string; /** trailing */\nm(): void; /** method */\n}",
+        "kind": "interface",
+        "names": [
+          "I"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "x: string;",
+        "kind": "property",
+        "names": [
+          "x"
+        ],
+        "docs": []
+      },
+      {
+        "raw": "m(): void;",
+        "kind": "method",
+        "names": [
+          "m"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/** trailing */",
+      "/** method */"
+    ],
+    "dialects": [
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "lexical-traps",
+    "source": "const s = \"/** fake */\", r = /[/**]/, t = `/** fake */ ${/* real */ 1}`;\n//# sourceMappingURL=a",
+    "declarations": [
+      {
+        "raw": "const s = \"/** fake */\", r = /[/**]/, t = `/** fake */ ${/* real */ 1}`;",
+        "kind": "const",
+        "names": [
+          "s",
+          "r",
+          "t"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/* real */",
+      "//# sourceMappingURL=a"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "jsx-traps",
+    "source": "const x = <A text=\"/** fake */\">/** fake */{/* real */}</A>;",
+    "declarations": [
+      {
+        "raw": "const x = <A text=\"/** fake */\">/** fake */{/* real */}</A>;",
+        "kind": "const",
+        "names": [
+          "x"
+        ],
+        "docs": []
+      }
+    ],
+    "comments": [
+      "/* real */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "physical-LF",
+    "source": "// café 😀\n/** Café 😀 中\n * @param 名称\n */\nfunction résumé(名称) {\n return 名称;\n}\n",
+    "declarations": [
+      {
+        "raw": "function résumé(名称) {\n return 名称;\n}",
+        "kind": "function",
+        "names": [
+          "résumé"
+        ],
+        "docs": [
+          "/** Café 😀 中\n * @param 名称\n */"
+        ]
+      }
+    ],
+    "comments": [
+      "// café 😀",
+      "/** Café 😀 中\n * @param 名称\n */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "physical-CRLF",
+    "source": "// café 😀\r\n/** Café 😀 中\r\n * @param 名称\r\n */\r\nfunction résumé(名称) {\r\n return 名称;\r\n}\r\n",
+    "declarations": [
+      {
+        "raw": "function résumé(名称) {\r\n return 名称;\r\n}",
+        "kind": "function",
+        "names": [
+          "résumé"
+        ],
+        "docs": [
+          "/** Café 😀 中\r\n * @param 名称\r\n */"
+        ]
+      }
+    ],
+    "comments": [
+      "// café 😀",
+      "/** Café 😀 中\r\n * @param 名称\r\n */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "hashbang",
+    "source": "#!/usr/bin/env node\n/** A */\nfunction f() {}\n",
+    "declarations": [
+      {
+        "raw": "function f() {}",
+        "kind": "function",
+        "names": [
+          "f"
+        ],
+        "docs": [
+          "/** A */"
+        ]
+      }
+    ],
+    "comments": [
+      "#!/usr/bin/env node",
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": false
+  },
+  {
+    "name": "recovery-broken-before",
+    "source": "const broken = ;\n/** later */\nfunction later() {}\n",
+    "declarations": [],
+    "comments": [
+      "/** later */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": true
+  },
+  {
+    "name": "recovery-broken-after",
+    "source": "/** early */\nfunction early() {}\nconst broken = ;\n",
+    "declarations": [],
+    "comments": [
+      "/** early */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": true
+  },
+  {
+    "name": "recovery-broken-between",
+    "source": "/** before-broken */\nconst broken = ;\nfunction later() {}\n",
+    "declarations": [],
+    "comments": [
+      "/** before-broken */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": true
+  },
+  {
+    "name": "recovery-broken-owner",
+    "source": "/** broken-owner */\nfunction broken( {}\nfunction later() {}\n",
+    "declarations": [],
+    "comments": [
+      "/** broken-owner */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": true
+  },
+  {
+    "name": "recovery-missing-delimiter",
+    "source": "const broken = (1;\n/** later */\nfunction later() {}\n",
+    "declarations": [],
+    "comments": [
+      "/** later */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": true
+  },
+  {
+    "name": "recovery-class-member",
+    "source": "class C { broken((x) {}\n/** method */\nmethod() {}\n}\n",
+    "declarations": [],
+    "comments": [
+      "/** method */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": true
+  },
+  {
+    "name": "recovery-replay-owner",
+    "source": "/** broken-owner */\nconst broken = (1;\nfunction later() {}\n",
+    "declarations": [],
+    "comments": [
+      "/** broken-owner */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": true
+  },
+  {
+    "name": "recovery-replay-later",
+    "source": "const broken = (1;\n/** later */\nfunction later() {}\n",
+    "declarations": [],
+    "comments": [
+      "/** later */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": true
+  },
+  {
+    "name": "recovery-replay-between",
+    "source": "/** A */\nconst broken = (1;\nfunction later() {}\n",
+    "declarations": [],
+    "comments": [
+      "/** A */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": true
+  },
+  {
+    "name": "recovery-missing-body-close",
+    "source": "/** outer */\nfunction outer() {\n/** inner */\nfunction inner() {}\n",
+    "declarations": [],
+    "comments": [
+      "/** outer */",
+      "/** inner */"
+    ],
+    "dialects": [
+      "JS",
+      "JSX",
+      "TS",
+      "TSX"
+    ],
+    "recovery": true
+  },
+  {
+    "name": "recovery-jsx-before",
+    "source": "const bad = <A broken=;\n/** later */\nfunction later() {}\n",
+    "declarations": [],
+    "comments": [
+      "/** later */"
+    ],
+    "dialects": [
+      "JSX",
+      "TSX"
+    ],
+    "recovery": true
+  },
+  {
+    "name": "recovery-jsx-unclosed",
+    "source": "const bad = <A>\n/** fake JSX text */\nfunction later() {}\n",
+    "declarations": [],
+    "comments": [],
+    "dialects": [
+      "JSX",
+      "TSX"
+    ],
+    "recovery": true
+  },
+  {
+    "name": "recovery-jsx-expression",
+    "source": "const bad = <A>{broken(}</A>;\n/** later */\nfunction later() {}\n",
+    "declarations": [],
+    "comments": [
+      "/** later */"
+    ],
+    "dialects": [
+      "JSX",
+      "TSX"
+    ],
+    "recovery": true
+  }
+]

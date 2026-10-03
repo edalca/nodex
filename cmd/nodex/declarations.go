@@ -30,8 +30,8 @@ func declarations(dirs project.Locations, filters discoveryFilters) (string, err
 // formatDeclarations renders declarations as compact Markdown.
 //
 // Each block is the declaration ID, its logical file path, its kind, its names,
-// and the comment ID of the directly associated documentation comment. A
-// declaration with no names uses a names line that has no value. doc: none
+// and the ordered comment IDs of the direct documentation relationships. A
+// declaration with no names uses a names line that has no value. docs: none
 // means the parser recorded no documentation comment on that node. No
 // declarations produce an empty result.
 func formatDeclarations(decls []index.Declaration) string {
@@ -54,8 +54,8 @@ func formatDeclarations(decls []index.Declaration) string {
 		b.WriteByte('\n')
 		b.WriteString(formatNamesLine(decl.Names))
 		b.WriteByte('\n')
-		b.WriteString("doc: ")
-		b.WriteString(formatDoc(decl.Doc))
+		b.WriteString("docs: ")
+		b.WriteString(formatDocs(decl.Docs))
 		b.WriteByte('\n')
 	}
 	return b.String()
@@ -73,11 +73,15 @@ func formatNamesLine(names []string) string {
 	return "names: " + strings.Join(names, ", ")
 }
 
-// formatDoc renders the directly associated comment ID.
-// The zero ID is the explicit value none.
-func formatDoc(id index.ID) string {
-	if !id.Valid() {
+// formatDocs renders direct comment IDs in physical order, separated by a comma
+// and a space. An empty collection is the explicit value none.
+func formatDocs(docs []index.ID) string {
+	if len(docs) == 0 {
 		return "none"
 	}
-	return id.String()
+	ids := make([]string, len(docs))
+	for i, id := range docs {
+		ids[i] = id.String()
+	}
+	return strings.Join(ids, ", ")
 }

@@ -26,17 +26,15 @@ type Comment struct {
 }
 
 // Declaration is a structural fact with names in source order and a half-open
-// physical extent. Kind names its neutral form. HasDoc records only the parser's
-// direct documentation relationship; DocStart and DocEnd are meaningful when
-// HasDoc is true. An unnamed declaration has no synthetic name.
+// physical extent. Kind names its neutral form. Docs contains only direct
+// parser-owned documentation ranges in physical source order, without duplicates.
+// Docs is non-nil, including when empty. An unnamed declaration has no synthetic name.
 type Declaration struct {
-	Kind     string
-	Names    []string
-	Start    Position
-	End      Position
-	HasDoc   bool
-	DocStart Position
-	DocEnd   Position
+	Kind  string
+	Names []string
+	Start Position
+	End   Position
+	Docs  []Range
 }
 
 // Snippet is the exact contiguous source slice [Start, End), without formatting

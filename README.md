@@ -15,7 +15,13 @@ Nodex can show which declarations have a directly attached documentation comment
 
 Its job is to find the comments and declarations and show you where they are. The analysis is left to you or the LLM.
 
-This beta currently includes support for Go source files.
+This beta supports Go (`.go`), JavaScript (`.js`), JSX (`.jsx`), TypeScript (`.ts`), and TSX (`.tsx`). Recognition is case-sensitive. JavaScript and JSX share a grammar; TypeScript and TSX use distinct grammars. Other extensions are not recognized.
+
+For JavaScript-family source, Nodex records individual physical comments, declarations, raw structural names, exact byte ranges, and original-byte context. Declaration families include functions and generators, classes and members, constructors, getters/setters, variables and destructuring, interfaces and signatures, type aliases, enums and members, namespaces/modules, ambient declarations, object members, and anonymous default exports. Kinds describe source structure; they do not classify runtime values.
+
+Direct JSDoc relationships are ordered 0..N: several leading blocks remain separate comments with separate IDs. Attachment uses a declaration's structural leading-trivia slot before its export, ambient, decorator and modifier tokens. It does not cross intervening syntax. A block after a decorator remains a physical comment without documenting that declaration. Overload signatures and nested declarations keep independent relationships. Names keep exact source spelling, including escapes and literal property quotes; computed names and anonymous declarations may be empty. Constructors have no invented binding name.
+
+Nodex does not validate JavaScript/TypeScript syntax, type-check, resolve symbols or modules, or interpret JSDoc tags. If the parser exposes unsafe recovery, Nodex keeps confidently observed comments and omits every declaration in that file. Some comments can remain unobserved on arbitrarily broken input. This conservative policy can also omit intact neighboring declarations; it never guesses replacement relationships.
 
 ## Quick start
 
@@ -38,7 +44,7 @@ nodex index show C000001
 
 `index comments` gives you the list of indexed comments with their IDs, logical source-relative file paths, and normalized text.
 
-`index declarations` gives you each declaration's ID, logical source-relative file path, kind, names, and the ID of its directly attached documentation comment, or `doc: none` when there is none.
+`index declarations` gives you each declaration's ID, logical source-relative file path, kind, names, and the ordered IDs of its directly attached documentation comments, or `docs: none` when there are none.
 
 `index show` takes a comment ID or a declaration ID and shows you where it came from, together with the surrounding code.
 
@@ -113,7 +119,7 @@ If the source changes and you run `nodex index generate` again, a comment or dec
 
 Think of the IDs as short references for the current snapshot of the project.
 
-`doc: none` on a declaration means only that no documentation comment is attached directly to that declaration. It does not mean the declaration is wrong or that a comment should be added.
+`docs: none` on a declaration means only that no documentation comment is attached directly to that declaration. It does not mean the declaration is wrong or that a comment should be added.
 
 ## Commands
 
@@ -156,7 +162,7 @@ Example adds nothing.
 
 Prints indexed declarations as compact Markdown. Without filters, every declaration is included.
 
-Each entry contains only a declaration ID, its logical source-root-relative file path, its kind, its names, and either a comment ID or `doc: none`. Several names are written as `names: A, B`. A declaration with no name uses `names:` with nothing after it.
+Each entry contains only a declaration ID, its logical source-root-relative file path, its kind, its names, and ordered comment IDs separated by a comma and a space, or `docs: none`. Documentation IDs follow physical source order and preserve separate comment identities. Several names are written as `names: A, B`. A declaration with no name uses `names:` with nothing after it.
 
 ```md
 ## D000001
@@ -164,7 +170,7 @@ Each entry contains only a declaration ID, its logical source-root-relative file
 file: `internal/example/example.go`
 kind: function
 names: Example
-doc: C000001
+docs: C000001
 ```
 
 ### Discovery filters
@@ -441,4 +447,4 @@ Module:
 github.com/edalca/nodex
 ```
 
-Nodex uses only the Go standard library.
+Nodex uses the Go standard library for Go syntax and a pinned pure-Go gotreesitter runtime with embedded grammars for JavaScript-family syntax. Building and running Nodex requires no C toolchain, Node, or TypeScript compiler.

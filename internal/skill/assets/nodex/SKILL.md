@@ -9,6 +9,10 @@ description: Use Nodex when analyzing, reviewing, locating, or reasoning about s
 
 Nodex collects, indexes, localizes, and retrieves. The LLM analyzes.
 
+Supported extensions are `.go`, `.js`, `.jsx`, `.ts`, and `.tsx`, matched case-sensitively. JavaScript-family comments remain individual physical units. Direct JSDoc relationships are ordered 0..N and use structural leading-trivia slots before declaration modifiers, exports and decorators. Blocks after decorators do not directly document that declaration. Nested declarations and overload signatures have independent relationships; docs never propagate. Names preserve raw source spelling; computed names and anonymous declarations may be empty, and constructors have no invented binding name.
+
+Nodex does not validate JavaScript/TypeScript syntax, type-check, resolve symbols or modules, or interpret JSDoc tags. Detected unsafe recovery retains confidently observed comments and omits all declarations in that file, including intact neighbors. Arbitrarily broken source can also hide comments. Missing declarations or relationships are not quality judgments.
+
 The workflow applies to source comments and to declarations. Nodex does not decide whether a comment is correct, incorrect, stale, useful, obsolete, good, or bad. It does not decide that a declaration requires documentation. It is not a linter.
 
 Use this skill when the user asks to analyze code comments, review comments, inspect documentation comments, locate comments, investigate comments in source, reason about potentially stale or misleading comments, compare comments with the surrounding implementation, inspect which declarations have a directly associated documentation comment, or perform repository-wide comment analysis. Do not use it merely because a programming task contains source code. Use it when source comments or declaration documentation structure matter to the task.
@@ -74,9 +78,9 @@ Discovery provides an ID, a logical file path, and a compact fact. File paths ar
 - the logical source-root-relative file path after `file:`
 - the declaration kind
 - the declared names after `names:`, separated by a comma and a space when there are several, or `names:` with no value when the declaration has no name
-- `doc:` followed by the comment ID of the directly associated documentation comment, or `doc: none`
+- `docs:` followed by the ordered comment IDs of directly associated documentation comments, separated by a comma and a space, or `docs: none`
 
-`doc: none` means only that the parser recorded no documentation comment directly on that declaration. It does not mean that documentation is required, that the declaration is defective, or that a comment should be added. Do not treat `doc: none` as a defect by itself.
+`docs: none` means only that the parser recorded no documentation comment directly on that declaration. It does not mean that documentation is required, that the declaration is defective, or that a comment should be added. Do not treat `docs: none` as a defect by itself.
 
 The declaration list includes declarations that have direct documentation and declarations that do not.
 

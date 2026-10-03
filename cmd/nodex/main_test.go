@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -17,6 +18,87 @@ import (
 	"github.com/edalca/nodex/internal/skill"
 	"github.com/edalca/nodex/internal/syntax"
 )
+
+func TestPluralDeclarationOutput(t *testing.T) {
+	for _, count := range []int{0, 1, 2, 4} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			docs := make([]index.ID, count)
+			texts := make([]string, count)
+			for i := range docs {
+				texts[i] = fmt.Sprintf("C%06d", i+1)
+				var err error
+				docs[i], err = index.ParseID(texts[i])
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			id, err := index.ParseDeclID("D000001")
+			if err != nil {
+				t.Fatal(err)
+			}
+			decl := index.Declaration{ID: id, Path: "a.go", Language: syntax.Go, Kind: syntax.KindFunction, Names: []string{"F"},
+				Range: syntax.Range{Start: syntax.Position{Line: 1, Column: 1}, End: syntax.Position{Offset: 11, Line: 1, Column: 12}}, Docs: docs}
+			want := "none"
+			if count > 0 {
+				want = strings.Join(texts, ", ")
+			}
+			want = "docs: " + want + "\n"
+			for _, output := range []string{formatDeclarations([]index.Declaration{decl}), formatDeclarationShow(decl, syntax.Snippet{Text: "func F() {}"})} {
+				if !strings.Contains(output, want) || strings.Contains(output, "\ndoc:") {
+					t.Fatalf("output = %q, want %q", output, want)
+				}
+			}
+		})
+	}
+}
+
+func TestSingularIndexRequiresRebuild(t *testing.T) {
+	root := t.TempDir()
+	writeProjectFile(t, root, "a.go", "package p\n// direct\nfunc F() {}\n")
+	generateOK(t, root)
+	if got := commandOK(t, root, "status"); got != "index: current\nsources: 1\ncomments: 1\n" {
+		t.Fatalf("initial status = %q", got)
+	}
+	canonical := readGen(t, root, index.DeclarationsPath)
+	legacy := bytes.ReplaceAll(canonical, []byte(`"docs":[]`), []byte(`"doc":null`))
+	legacy = bytes.ReplaceAll(legacy, []byte(`"docs":["C000001"]`), []byte(`"doc":"C000001"`))
+	var snapshot map[string]json.RawMessage
+	if err := json.Unmarshal(readGen(t, root, index.SnapshotPath), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if string(snapshot["schema"]) != "1" {
+		t.Fatalf("schema changed: %s", snapshot["schema"])
+	}
+	digest, err := json.Marshal(index.DigestBytes(legacy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot["declarations_digest"] = digest
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeProjectFile(t, root, index.DeclarationsPath, string(legacy))
+	writeProjectFile(t, root, index.SnapshotPath, string(raw)+"\n")
+	before := pairBytes(t, root)
+	if got := commandOK(t, root, "status"); got != "index: corrupt\n" {
+		t.Fatalf("legacy status = %q", got)
+	}
+	for _, args := range [][]string{{"index", "declarations"}, {"index", "comments"}, {"index", "show", "D000002"}} {
+		stdout, stderr, err := runAt(root, args...)
+		if err == nil || stdout != "" || !strings.Contains(stderr, "corrupt") {
+			t.Fatalf("legacy %v = %q %q %v", args, stdout, stderr, err)
+		}
+	}
+	requireSameIndex(t, root, before)
+	generateOK(t, root)
+	if got := commandOK(t, root, "status"); got != "index: current\nsources: 1\ncomments: 1\n" {
+		t.Fatalf("rebuilt status = %q", got)
+	}
+	if rebuilt := readGen(t, root, index.DeclarationsPath); !bytes.Equal(rebuilt, canonical) {
+		t.Fatalf("rebuilt declarations = %s, want %s", rebuilt, canonical)
+	}
+}
 
 // version stays a source constant. This declaration does not compile if
 // version becomes a variable.
@@ -2732,16 +2814,16 @@ func TestIndexDeclarations(t *testing.T) {
 		"\t}\n" +
 		")\n"
 	const wantDecls = "" +
-		"## D000001\n\nfile: `sample.go`\nkind: package\nnames: sample\ndoc: C000001\n\n" +
-		"## D000002\n\nfile: `sample.go`\nkind: function\nnames: F\ndoc: C000002\n\n" +
-		"## D000003\n\nfile: `sample.go`\nkind: function\nnames: g\ndoc: none\n\n" +
-		"## D000004\n\nfile: `sample.go`\nkind: const-group\nnames: A, B\ndoc: none\n\n" +
-		"## D000005\n\nfile: `sample.go`\nkind: const\nnames: A\ndoc: C000003\n\n" +
-		"## D000006\n\nfile: `sample.go`\nkind: const\nnames: B\ndoc: none\n\n" +
-		"## D000007\n\nfile: `sample.go`\nkind: type-group\nnames: T\ndoc: C000004\n\n" +
-		"## D000008\n\nfile: `sample.go`\nkind: type\nnames: T\ndoc: none\n\n" +
-		"## D000009\n\nfile: `sample.go`\nkind: field\nnames: Name\ndoc: C000005\n\n" +
-		"## D000010\n\nfile: `sample.go`\nkind: field\nnames: Hidden\ndoc: none\n"
+		"## D000001\n\nfile: `sample.go`\nkind: package\nnames: sample\ndocs: C000001\n\n" +
+		"## D000002\n\nfile: `sample.go`\nkind: function\nnames: F\ndocs: C000002\n\n" +
+		"## D000003\n\nfile: `sample.go`\nkind: function\nnames: g\ndocs: none\n\n" +
+		"## D000004\n\nfile: `sample.go`\nkind: const-group\nnames: A, B\ndocs: none\n\n" +
+		"## D000005\n\nfile: `sample.go`\nkind: const\nnames: A\ndocs: C000003\n\n" +
+		"## D000006\n\nfile: `sample.go`\nkind: const\nnames: B\ndocs: none\n\n" +
+		"## D000007\n\nfile: `sample.go`\nkind: type-group\nnames: T\ndocs: C000004\n\n" +
+		"## D000008\n\nfile: `sample.go`\nkind: type\nnames: T\ndocs: none\n\n" +
+		"## D000009\n\nfile: `sample.go`\nkind: field\nnames: Name\ndocs: C000005\n\n" +
+		"## D000010\n\nfile: `sample.go`\nkind: field\nnames: Hidden\ndocs: none\n"
 	const wantComments = "" +
 		"## C000001\n\nfile: `sample.go`\n\nPackage sample documents sample.\n\n" +
 		"## C000002\n\nfile: `sample.go`\n\nF documents F.\n\n" +
@@ -2770,12 +2852,12 @@ func TestIndexDeclarations(t *testing.T) {
 			t.Fatalf("comments = %q", got)
 		}
 		got := commandOK(t, root, "declarations")
-		want := "## D000001\n\nfile: `a.go`\nkind: package\nnames: a\ndoc: none\n"
+		want := "## D000001\n\nfile: `a.go`\nkind: package\nnames: a\ndocs: none\n"
 		if got != want {
 			t.Fatalf("declarations = %q\nwant %q", got, want)
 		}
 		shown := showOK(t, root, "D000001")
-		wantShow := "## D000001\n\nfile: `a.go`\nlines: 1\nkind: package\nnames: a\ndoc: none\n\n### Context\n\n```go\npackage a\n```\n"
+		wantShow := "## D000001\n\nfile: `a.go`\nlines: 1\nkind: package\nnames: a\ndocs: none\n\n### Context\n\n```go\npackage a\n```\n"
 		if shown != wantShow {
 			t.Fatalf("show = %q\nwant %q", shown, wantShow)
 		}
@@ -2787,16 +2869,16 @@ func TestIndexDeclarations(t *testing.T) {
 		generateOK(t, root)
 		got := commandOK(t, root, "declarations")
 		want := "" +
-			"## D000001\n\nfile: `a.go`\nkind: package\nnames: p\ndoc: none\n\n" +
-			"## D000002\n\nfile: `a.go`\nkind: type\nnames: T\ndoc: none\n\n" +
-			"## D000003\n\nfile: `a.go`\nkind: field\nnames: none\ndoc: none\n\n" +
-			"## D000004\n\nfile: `a.go`\nkind: field\nnames:\ndoc: none\n\n" +
-			"## D000005\n\nfile: `a.go`\nkind: type\nnames: U\ndoc: none\n"
+			"## D000001\n\nfile: `a.go`\nkind: package\nnames: p\ndocs: none\n\n" +
+			"## D000002\n\nfile: `a.go`\nkind: type\nnames: T\ndocs: none\n\n" +
+			"## D000003\n\nfile: `a.go`\nkind: field\nnames: none\ndocs: none\n\n" +
+			"## D000004\n\nfile: `a.go`\nkind: field\nnames:\ndocs: none\n\n" +
+			"## D000005\n\nfile: `a.go`\nkind: type\nnames: U\ndocs: none\n"
 		if got != want {
 			t.Fatalf("declarations = %q\nwant %q", got, want)
 		}
 		shown := showOK(t, root, "D000003", "D000004")
-		if !strings.Contains(shown, "kind: field\nnames: none\ndoc: none\n") || !strings.Contains(shown, "kind: field\nnames:\ndoc: none\n") {
+		if !strings.Contains(shown, "kind: field\nnames: none\ndocs: none\n") || !strings.Contains(shown, "kind: field\nnames:\ndocs: none\n") {
 			t.Fatalf("show = %q", shown)
 		}
 	})
@@ -2816,7 +2898,7 @@ func TestIndexDeclarations(t *testing.T) {
 	if snap.CommentCount != 5 || snap.DeclarationCount != 10 || snap.CommentsDigest != index.DigestBytes(readGen(t, root, index.CommentsPath)) || snap.DeclarationsDigest != index.DigestBytes(readGen(t, root, index.DeclarationsPath)) {
 		t.Fatalf("snapshot = %+v", snap)
 	}
-	if idx.Declarations()[1].Doc.String() != "C000002" || idx.Declarations()[2].Doc.Valid() || idx.Declarations()[6].Doc.String() != "C000004" || idx.Declarations()[7].Doc.Valid() {
+	if idx.Declarations()[1].Docs[0].String() != "C000002" || len(idx.Declarations()[2].Docs) != 0 || idx.Declarations()[6].Docs[0].String() != "C000004" || len(idx.Declarations()[7].Docs) != 0 {
 		t.Fatalf("relationships = %+v", idx.Declarations())
 	}
 
@@ -2833,14 +2915,14 @@ func TestIndexDeclarations(t *testing.T) {
 	}
 
 	declShow := showOK(t, root, "D000002")
-	wantDeclShow := "## D000002\n\nfile: `sample.go`\nlines: 5\nkind: function\nnames: F\ndoc: C000002\n\n### Context\n\n```go\nfunc F() {}\n```\n"
+	wantDeclShow := "## D000002\n\nfile: `sample.go`\nlines: 5\nkind: function\nnames: F\ndocs: C000002\n\n### Context\n\n```go\nfunc F() {}\n```\n"
 	if declShow != wantDeclShow {
 		t.Fatalf("declaration show = %q\nwant %q", declShow, wantDeclShow)
 	}
 
 	groupShow := showOK(t, root, "D000004")
 	groupHead := strings.Split(groupShow, "### Context\n")[0]
-	if strings.Contains(groupHead, "A documents A.") || !strings.Contains(groupHead, "doc: none\n") {
+	if strings.Contains(groupHead, "A documents A.") || !strings.Contains(groupHead, "docs: none\n") {
 		t.Fatalf("group metadata = %q", groupHead)
 	}
 
@@ -2953,10 +3035,10 @@ func TestDiscoveryLogicalPaths(t *testing.T) {
 			}
 			declarations := runCommand("declarations")
 			const wantDeclarations = "" +
-				"## D000001\n\nfile: `a/b/example.go`\nkind: package\nnames: example\ndoc: none\n\n" +
-				"## D000002\n\nfile: `a/b/example.go`\nkind: function\nnames: Example\ndoc: C000001\n\n" +
-				"## D000003\n\nfile: `z/example.go`\nkind: package\nnames: example\ndoc: none\n\n" +
-				"## D000004\n\nfile: `z/example.go`\nkind: function\nnames: Example\ndoc: none\n"
+				"## D000001\n\nfile: `a/b/example.go`\nkind: package\nnames: example\ndocs: none\n\n" +
+				"## D000002\n\nfile: `a/b/example.go`\nkind: function\nnames: Example\ndocs: C000001\n\n" +
+				"## D000003\n\nfile: `z/example.go`\nkind: package\nnames: example\ndocs: none\n\n" +
+				"## D000004\n\nfile: `z/example.go`\nkind: function\nnames: Example\ndocs: none\n"
 			if declarations != wantDeclarations {
 				t.Fatalf("declarations = %q, want %q", declarations, wantDeclarations)
 			}
@@ -3008,8 +3090,8 @@ func TestDetachedWorkspace(t *testing.T) {
 		t.Fatalf("comments = %q", got)
 	}
 	const wantDeclarations = "" +
-		"## D000001\n\nfile: `a.go`\nkind: package\nnames: a\ndoc: C000001\n\n" +
-		"## D000002\n\nfile: `a_test.go`\nkind: package\nnames: a\ndoc: C000002\n"
+		"## D000001\n\nfile: `a.go`\nkind: package\nnames: a\ndocs: C000001\n\n" +
+		"## D000002\n\nfile: `a_test.go`\nkind: package\nnames: a\ndocs: C000002\n"
 	if got := detached("declarations"); got != wantDeclarations {
 		t.Fatalf("declarations = %q", got)
 	}
@@ -3395,7 +3477,7 @@ func TestDiscoveryFilters(t *testing.T) {
 					if fact.names != "" {
 						names += " " + fact.names
 					}
-					blocks = append(blocks, fmt.Sprintf("## D%06d\n\nfile: `%s`\nkind: %s\n%s\ndoc: %s\n", n, fact.path, fact.kind, names, fact.doc))
+					blocks = append(blocks, fmt.Sprintf("## D%06d\n\nfile: `%s`\nkind: %s\n%s\ndocs: %s\n", n, fact.path, fact.kind, names, fact.doc))
 				}
 				return strings.Join(blocks, "\n")
 			}
@@ -3444,7 +3526,7 @@ func TestDiscoveryFilters(t *testing.T) {
 				})
 			}
 			shown := invoke("show", "D000010")
-			const wantShow = "## D000010\n\nfile: `internal/history/a.go`\nlines: 4\nkind: method\nnames: ProjectAuthority\ndoc: none\n\n### Context\n\n```go\nfunc (s Service) ProjectAuthority() {}\n```\n"
+			const wantShow = "## D000010\n\nfile: `internal/history/a.go`\nlines: 4\nkind: method\nnames: ProjectAuthority\ndocs: none\n\n### Context\n\n```go\nfunc (s Service) ProjectAuthority() {}\n```\n"
 			if shown != wantShow {
 				t.Fatalf("show = %q, want %q", shown, wantShow)
 			}
@@ -3549,5 +3631,158 @@ func TestFilteredDiscoveryLifecycle(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMixedLanguageIndex(t *testing.T) {
+	root := t.TempDir()
+	files := []struct {
+		path, source string
+		language     syntax.Language
+	}{
+		{"a.go", "package p\n// Go F\nfunc F() {}\n", syntax.Go},
+		{"b.js", "/** A */\n\n/** B */\nexport function F() {}\n", syntax.JavaScript},
+		{"c.jsx", "/** JSX */\nfunction F() { return <A text=\"/** fake */\">{/* interior */}</A>; }\n", syntax.JSX},
+		{"d.ts", "/** TS */\nfunction F(x: string): void;\nfunction F(x: unknown): void {}\n/** I */\ninterface I {\n/** x */\nx: string;\n}\n", syntax.TypeScript},
+		{"e.tsx", "/** TSX */\nfunction F() { return <A />; }\n", syntax.TSX},
+	}
+	writeProjectFile(t, root, files[0].path, files[0].source)
+	generateOK(t, root)
+	goComments := readGen(t, root, index.CommentsPath)
+	goDeclarations := readGen(t, root, index.DeclarationsPath)
+	for _, f := range files[1:] {
+		writeProjectFile(t, root, f.path, f.source)
+	}
+	var canonical [3][]byte
+	paths := []string{index.CommentsPath, index.DeclarationsPath, index.SnapshotPath}
+	for generation := 0; generation < 3; generation++ {
+		generateOK(t, root)
+		for i, path := range paths {
+			raw := readGen(t, root, path)
+			if generation == 0 {
+				canonical[i] = raw
+			} else if !bytes.Equal(raw, canonical[i]) {
+				t.Fatalf("generation %d changed %s", generation, path)
+			}
+		}
+	}
+	if !bytes.HasPrefix(canonical[0], goComments) || !bytes.HasPrefix(canonical[1], goDeclarations) {
+		t.Fatal("Go index facts changed")
+	}
+	idx, snapshot := loadIndex(t, root)
+	before := pairBytes(t, root)
+	if len(snapshot.Sources) != 5 {
+		t.Fatalf("sources=%+v", snapshot.Sources)
+	}
+	for i, f := range files {
+		if snapshot.Sources[i].Path != f.path || snapshot.Sources[i].Language != f.language || snapshot.Sources[i].Digest != index.DigestBytes([]byte(f.source)) {
+			t.Fatalf("source fingerprint=%+v", snapshot.Sources[i])
+		}
+	}
+	if got := runOK(t, root, "index", "status"); !strings.HasPrefix(got, "index: current\n") {
+		t.Fatal(got)
+	}
+	want := []struct {
+		path string
+		kind syntax.Kind
+		name string
+		docs []string
+		raw  string
+	}{
+		{"a.go", syntax.KindPackage, "p", []string{}, "package p"},
+		{"a.go", syntax.KindFunction, "F", []string{"C000001"}, "func F() {}"},
+		{"b.js", syntax.KindFunction, "F", []string{"C000002", "C000003"}, "export function F() {}"},
+		{"c.jsx", syntax.KindFunction, "F", []string{"C000004"}, "function F() { return <A text=\"/** fake */\">{/* interior */}</A>; }"},
+		{"d.ts", syntax.KindFunction, "F", []string{"C000006"}, "function F(x: string): void;"},
+		{"d.ts", syntax.KindFunction, "F", []string{}, "function F(x: unknown): void {}"},
+		{"d.ts", syntax.KindInterface, "I", []string{"C000007"}, "interface I {\n/** x */\nx: string;\n}"},
+		{"d.ts", syntax.KindProperty, "x", []string{"C000008"}, "x: string;"},
+		{"e.tsx", syntax.KindFunction, "F", []string{"C000009"}, "function F() { return <A />; }"},
+	}
+	declarations := idx.Declarations()
+	if len(declarations) != len(want) || idx.Len() != 9 {
+		t.Fatalf("facts=%+v comments=%+v", declarations, idx.Entries())
+	}
+	sourceByPath := map[string]string{}
+	for _, f := range files {
+		sourceByPath[f.path] = f.source
+	}
+	for i, w := range want {
+		d := declarations[i]
+		ids := []string{}
+		for _, id := range d.Docs {
+			ids = append(ids, id.String())
+		}
+		if d.ID.String() != fmt.Sprintf("D%06d", i+1) || d.Path != w.path || d.Kind != w.kind || !slices.Equal(d.Names, []string{w.name}) || !slices.Equal(ids, w.docs) {
+			t.Fatalf("declaration=%+v want %+v", d, w)
+		}
+		source := sourceByPath[d.Path]
+		if source[d.Range.Start.Offset:d.Range.End.Offset] != w.raw {
+			t.Fatalf("wrong declaration extent: %+v", d)
+		}
+		output := runOK(t, root, "index", "show", d.ID.String())
+		if !strings.Contains(output, w.raw) {
+			t.Fatalf("show lost context: %q", output)
+		}
+		for _, id := range d.Docs {
+			comment, ok := idx.Lookup(id)
+			if !ok || comment.Path != d.Path {
+				t.Fatal("cross-file documentation")
+			}
+		}
+	}
+	for _, c := range idx.Entries() {
+		output := runOK(t, root, "index", "show", c.ID.String())
+		if !strings.Contains(output, sourceByPath[c.Path][c.Range.Start.Offset:c.Range.End.Offset]) {
+			t.Fatal("show lost exact physical comment")
+		}
+	}
+	for _, tc := range []struct {
+		args     []string
+		selected []index.Declaration
+	}{
+		{[]string{"--file", "b.js"}, declarations[2:3]},
+		{[]string{"--kind", "interface", "property"}, declarations[6:8]},
+		{[]string{"--kind", "function", "--name", "F"}, append(append([]index.Declaration{}, declarations[1:6]...), declarations[8])},
+		{[]string{"--file", "d.ts", "--name", "F"}, declarations[4:6]},
+	} {
+		args := append([]string{"index", "declarations"}, tc.args...)
+		if got := runOK(t, root, args...); got != formatDeclarations(tc.selected) {
+			t.Fatalf("filter %v=%q want %q", tc.args, got, formatDeclarations(tc.selected))
+		}
+	}
+	if got := runOK(t, root, "index", "comments", "--file", "b.js"); got != formatComments(idx.Entries()[1:3]) {
+		t.Fatalf("comment file filter=%q", got)
+	}
+	requireSameIndex(t, root, before)
+	// Currentness compares bytes even when the new source would need recovery.
+	writeProjectFile(t, root, "b.js", "/** A */\nconst broken = ;\n")
+	if got := runOK(t, root, "index", "status"); !strings.HasPrefix(got, "index: stale\n") {
+		t.Fatalf("changed source status=%q", got)
+	}
+	for _, args := range [][]string{{"index", "comments"}, {"index", "declarations", "--name", "F"}, {"index", "show", "D000003"}} {
+		stdout, _, err := runAt(root, args...)
+		if err == nil || stdout != "" {
+			t.Fatal("stale retrieval succeeded")
+		}
+	}
+	generateOK(t, root)
+	recovered, _ := loadIndex(t, root)
+	for _, d := range recovered.Declarations() {
+		if d.Path == "b.js" {
+			t.Fatalf("unsafe recovery persisted: %+v", d)
+		}
+	}
+	observed := false
+	for _, c := range recovered.Entries() {
+		if c.Path == "b.js" {
+			observed = true
+		}
+	}
+	if !observed {
+		t.Fatal("recovery lost observed physical JSDoc")
+	}
+	if got := runOK(t, root, "index", "status"); !strings.HasPrefix(got, "index: current\n") {
+		t.Fatal(got)
 	}
 }

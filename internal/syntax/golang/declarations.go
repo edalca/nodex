@@ -288,7 +288,7 @@ func oneDecl(src []byte, tf *token.File, kind string, names []string, pos, end t
 	if err != nil {
 		return types.Declaration{}, err
 	}
-	decl := types.Declaration{Kind: kind, Names: names, Start: start, End: finish}
+	decl := types.Declaration{Kind: kind, Names: names, Start: start, End: finish, Docs: []types.Range{}}
 	if err := attachDoc(src, tf, &decl, doc); err != nil {
 		return types.Declaration{}, err
 	}
@@ -315,8 +315,6 @@ func attachDoc(src []byte, tf *token.File, decl *types.Declaration, group *ast.C
 	if err != nil {
 		return err
 	}
-	decl.HasDoc = true
-	decl.DocStart = comment.Start
-	decl.DocEnd = comment.End
+	decl.Docs = []types.Range{{Start: comment.Start, End: comment.End}}
 	return nil
 }

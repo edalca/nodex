@@ -6,15 +6,31 @@ import (
 	"strings"
 
 	"github.com/edalca/nodex/internal/syntax/contracts"
+	"github.com/edalca/nodex/internal/syntax/ecmascript"
 	"github.com/edalca/nodex/internal/syntax/golang"
 )
 
 // Go is the stable Go language identifier exposed by the syntax facade.
 const Go Language = "go"
 
+const (
+	// JavaScript is the language identifier for .js source.
+	JavaScript Language = "javascript"
+	// JSX is the language identifier for .jsx source.
+	JSX Language = "jsx"
+	// TypeScript is the language identifier for .ts source.
+	TypeScript Language = "typescript"
+	// TSX is the language identifier for .tsx source.
+	TSX Language = "tsx"
+)
+
 // languages is the sole composition point for complete language capabilities.
 var languages = mustRegistry([]contracts.Language{
 	golang.New(),
+	ecmascript.New(ecmascript.JavaScript),
+	ecmascript.New(ecmascript.JSX),
+	ecmascript.New(ecmascript.TypeScript),
+	ecmascript.New(ecmascript.TSX),
 })
 
 type registry struct {

@@ -19,13 +19,17 @@ type Language interface {
 	// Recognize uses only a case-sensitive logical path suffix, never contents.
 	Recognize(logicalPath string) bool
 	// Parse returns all comment units in physical order and declaration facts
-	// from one parse. Documentation is the parser's direct relationship. Nil
+	// from one parse. Docs contains zero or more direct parser-owned physical
+	// documentation ranges in source order, without duplicates, and is non-nil. Nil
 	// source means empty input. Failure returns nil and a *ParseError, with no
-	// partial document. Positions remain physical despite source directives.
+	// partial document. Languages define their structural recovery policy;
+	// success does not certify language validity. Positions remain physical
+	// despite source directives.
 	Parse(source []byte) (*Document, error)
 	// Context identifies exactly one comment by its physical range and returns
 	// a contiguous original source slice bounded by limits. Failure returns a
-	// zero snippet and a range sentinel below, or *ParseError for invalid source.
+	// zero snippet and a range sentinel below, or *ParseError when source
+	// structure is unavailable.
 	Context(source []byte, target types.Range, limits Limits) (types.Snippet, error)
 	// DeclarationContext identifies exactly one declaration by its physical
 	// range. The bounded original slice keeps the declaration's starting line.

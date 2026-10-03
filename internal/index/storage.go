@@ -445,7 +445,7 @@ type declarationDTO struct {
 	Kind     string   `json:"kind"`
 	Names    []string `json:"names"`
 	Range    rangeDTO `json:"range"`
-	Doc      *string  `json:"doc"`
+	Docs     []string `json:"docs"`
 }
 
 type rangeDTO struct {
@@ -518,14 +518,14 @@ func encodeDeclarations(decls []Declaration) ([]byte, error) {
 			Language: string(decl.Language),
 			Kind:     string(decl.Kind),
 			Names:    names,
+			Docs:     make([]string, len(decl.Docs)),
 			Range: rangeDTO{
 				Start: positionDTO{Offset: decl.Range.Start.Offset, Line: decl.Range.Start.Line, Column: decl.Range.Start.Column},
 				End:   positionDTO{Offset: decl.Range.End.Offset, Line: decl.Range.End.Line, Column: decl.Range.End.Column},
 			},
 		}
-		if decl.Doc.Valid() {
-			text := decl.Doc.String()
-			dto.Doc = &text
+		for i, id := range decl.Docs {
+			dto.Docs[i] = id.String()
 		}
 		if err := enc.Encode(dto); err != nil {
 			return nil, err
@@ -970,10 +970,10 @@ func parseDeclarationLine(line []byte) (Declaration, error) {
 		}
 		return Declaration{}, fmt.Errorf("%w: %v", ErrTrailingData, err)
 	}
-	if err := rejectUnknown(fields, "id", "path", "language", "kind", "names", "range", "doc"); err != nil {
+	if err := rejectUnknown(fields, "id", "path", "language", "kind", "names", "range", "docs"); err != nil {
 		return Declaration{}, err
 	}
-	for _, key := range []string{"id", "path", "language", "kind", "names", "range", "doc"} {
+	for _, key := range []string{"id", "path", "language", "kind", "names", "range", "docs"} {
 		if _, ok := fields[key]; !ok {
 			return Declaration{}, fmt.Errorf("%w: %s", errMissingField, key)
 		}
@@ -1006,9 +1006,9 @@ func parseDeclarationLine(line []byte) (Declaration, error) {
 	if err != nil {
 		return Declaration{}, fmt.Errorf("range: %w", err)
 	}
-	doc, err := decodeDocID(fields["doc"])
+	docs, err := decodeDocIDs(fields["docs"])
 	if err != nil {
-		return Declaration{}, fmt.Errorf("doc: %w", err)
+		return Declaration{}, fmt.Errorf("docs: %w", err)
 	}
 	return Declaration{
 		ID:       id,
@@ -1017,7 +1017,7 @@ func parseDeclarationLine(line []byte) (Declaration, error) {
 		Kind:     syntax.Kind(kind),
 		Names:    names,
 		Range:    rng,
-		Doc:      doc,
+		Docs:     docs,
 	}, nil
 }
 
@@ -1043,19 +1043,27 @@ func decodeNames(raw json.RawMessage) ([]string, error) {
 	return names, nil
 }
 
-func decodeDocID(raw json.RawMessage) (ID, error) {
+func decodeDocIDs(raw json.RawMessage) ([]ID, error) {
 	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-		return ID{}, nil
+		return nil, errors.New("must be an array, not null")
 	}
-	text, err := decodeString(raw)
-	if err != nil {
-		return ID{}, errors.New("must be a comment ID or null")
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil, errors.New("must be an array of comment IDs")
 	}
-	id, err := ParseID(text)
-	if err != nil {
-		return ID{}, err
+	docs := make([]ID, len(items))
+	for i, item := range items {
+		text, err := decodeString(item)
+		if err != nil {
+			return nil, fmt.Errorf("[%d]: %w", i, err)
+		}
+		id, err := ParseID(text)
+		if err != nil {
+			return nil, fmt.Errorf("[%d]: %w", i, err)
+		}
+		docs[i] = id
 	}
-	return id, nil
+	return docs, nil
 }
 
 func validateDeclarations(decls []Declaration, comments []Entry) error {
@@ -1089,11 +1097,21 @@ func validateDeclarations(decls []Declaration, comments []Entry) error {
 				return fmt.Errorf("declaration [%d]: name [%d] is invalid", i, n)
 			}
 		}
-		if decl.Doc.Valid() {
-			comment, ok := byComment[decl.Doc.n]
-			if !ok || comment.Path != decl.Path {
+		seenDocs := make(map[ID]bool, len(decl.Docs))
+		var previous Entry
+		for j, id := range decl.Docs {
+			comment, ok := byComment[id.n]
+			if !id.Valid() || !ok || comment.Path != decl.Path {
 				return fmt.Errorf("declaration [%d]: %w", i, ErrDanglingDoc)
 			}
+			if seenDocs[id] {
+				return fmt.Errorf("declaration [%d] docs[%d]: %w", i, j, ErrDuplicateDoc)
+			}
+			seenDocs[id] = true
+			if j > 0 && compareCollected(collected{rng: previous.Range}, collected{rng: comment.Range}) >= 0 {
+				return fmt.Errorf("declaration [%d] docs[%d]: %w", i, j, ErrDocsOutOfOrder)
+			}
+			previous = comment
 		}
 		key := declKey{rng: decl.Range, kind: decl.Kind}
 		if prev, ok := seen[key]; ok && decls[prev].Path == decl.Path {

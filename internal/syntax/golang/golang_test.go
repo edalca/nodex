@@ -581,6 +581,9 @@ func TestNewSuppliesCompleteLanguageContract(t *testing.T) {
 			}
 		}
 		for _, declaration := range declarations {
+			if declaration.Docs == nil || len(declaration.Docs) > 1 {
+				t.Fatalf("Go direct docs must be a non-nil 0..1 collection: %+v", declaration)
+			}
 			want, err := golang.DeclarationContext(body, declaration.Start, declaration.End, limits)
 			got, gotErr := implementation.DeclarationContext(body, types.Range{Start: declaration.Start, End: declaration.End}, limits)
 			if err != nil || gotErr != nil || got != want {

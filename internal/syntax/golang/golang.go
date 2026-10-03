@@ -10,9 +10,10 @@
 // as comments. Text inside strings is left alone.
 //
 // ParseFile returns those comments and the declaration facts from the same
-// parse. A declaration fact uses the node's own documentation field. A nil
-// field is reported as no direct documentation. Import declarations are
-// not part of that fact list.
+// parse. A declaration fact uses only the node's own Doc relationship. Docs
+// is an empty non-nil collection when Doc is nil, or contains exactly that
+// comment group's physical range. Import declarations are not part of that
+// fact list.
 //
 // Context uses the same parser to select a structural container around one
 // comment group and returns a bounded slice of the caller-supplied bytes.
